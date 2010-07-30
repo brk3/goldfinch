@@ -1,0 +1,12 @@
+[account]
+AccountName = debug
+UserName = test8135
+Password = hadg90x0
+
+[preferences]
+Scrollback = 50
+SSL = yes
+ConfirmExit = yes
+
+[theme]
+# not implemented yet
