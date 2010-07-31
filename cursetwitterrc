@@ -1,7 +1,7 @@
 [account]
-AccountName = debug
-UserName = test8135
-Password = hadg90x0
+AccountName = Personal
+UserName = brk3
+OAuthPin = 3902673
 
 [preferences]
 Scrollback = 50
