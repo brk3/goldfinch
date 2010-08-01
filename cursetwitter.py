@@ -4,7 +4,6 @@ try:
   import curses
   import curses.wrapper
   import CustomTextbox
-  import gobject
   from oauth import oauth
   from oauthtwitter import OAuthApi
 except ImportError as e:
@@ -29,7 +28,7 @@ class MainWindow:
     (self.term_height, self.term_width) = self.stdscr.getmaxyx()
     self._draw_statusbar('cursetwitter' + ' v' + 
         CurseTwitter.__version__, 'top')
-    self._draw_statusbar(self.config.get('account', 'UserName'), 'bottom')
+    self._draw_statusbar(self.config.get('account', 'accountname'), 'bottom')
     self._draw_inputbox()
     self._draw_timeline(None)
     self.stdscr.move(self.term_height-1, 2)  # move the cursor to the input box
@@ -74,7 +73,7 @@ class MainWindow:
       except curses.error:
         pass
 
-class Config:
+class Config():
   def __init__(self, validate=None):
     '''Inits a Config object and sets rc location to
     os.path.join($HOME, 'cursetwitter', 'cursetwitter'+'rc').
@@ -83,51 +82,47 @@ class Config:
         ['cursetwitter', '.', self.__class__.__name__]))
     self.filename = os.path.join(os.environ['HOME'], '.cursetwitter',
         'cursetwitterrc')
-    self.logger.debug(self.filename)
+    self.cp = None
 
   def load_config(self):
-    cp = ConfigParser.SafeConfigParser()
-    ret = cp.read(self.filename)
+    self.cp = ConfigParser.SafeConfigParser()
+    ret = self.cp.read(self.filename)
     assert len(ret) > 0,\
         ''.join([self.filename, ' is empty or non existent.  ',
         'See README for examples on how to create one.'])
-    return cp
 
-  def ensure_config(self, config, mandatory_values):
+  def ensure_config(self, mandatory_values):
     '''Ensure config contains certain section:options.''' 
     for section,opt_list in mandatory_values.items():
-      if not config.has_section(section):
+      if not self.cp.has_section(section):
         return (False, section)
       for opt in opt_list:
-        if not opt in config.options(section):
+        if not opt in self.cp.options(section):
           return (False, opt)
     return (True, None)
+
+  def get_config(self):
+    assert self.cp is not None, 'Config.cp is None'
+    return self.cp
 
 class CurseTwitter:
   __version__ = '0.1'
 
   def __init__(self, stdscr):
     self.init_logger()
-    try:
-      self.config = Config().load_config()
-    except ConfigParser.ParsingError as e:
-      self.logger.error(e)
-      curses.endwin()
-      print('Error reading config file.\nSee log file for details')
-      exit(1)
-    except AssertionError as e:
-      self.logger.error(e)
-      curses.endwin()
-      print('config file is empty or non existent.')
-      print('Please see README for examples on creating one.')
-      exit(1)
+    self.stdscr = stdscr
     self.logger.info('Starting cursetwitter')
-    self.main_window = MainWindow(stdscr, self.config)
-    self.main_window.draw()
-    self.logger.debug('MainWindow initialized')
-    self.twitter = self.init_twitter_api()
-    self.logger.info('Twitter API sucessfully initialized')
-    #gobject.timeout_add(self.interval*1000, self._timer_cb)
+
+    self.init_config()
+    self.init_main_window()
+    self.init_twitter_api()
+
+    refresh_interval = self.config.getint('preferences', 'interval')
+    if refresh_interval < 60:
+      self.logger.info('interval cannot be less than 60 seconds')
+      refresh_interval = 60
+    # ...
+
     while True:
       self.parse_input()
 
@@ -159,6 +154,7 @@ class CurseTwitter:
     self.logger.addHandler(handler)
 
   def init_twitter_api(self):
+    self.logger.info('Initialising twitter Api')
     try:
       FILE = open(os.path.join(os.environ['HOME'], 
           '.cursetwitter', 'access_token'))
@@ -171,14 +167,49 @@ class CurseTwitter:
       #TODO: alert user and offer to generate a new one
     consumer_key = 'BRqDtHfWWNjNm4tLKj3g'
     consumer_secret = 'RzyFiyYutvxnKBzEUG2utiCejYgkPoDLAqMNNx3o'
-    twitter = OAuthApi(consumer_key, consumer_secret, 
+    self.twitter = OAuthApi(consumer_key, consumer_secret, 
         access_token['oauth_token'], access_token['oauth_token_secret'])
-    return twitter
+    self.logger.info('Twitter Api loaded')
 
   def update_timeline_cb(self):
     ''' Get the user's list of friends, get each of their statuses, and pass
     to main window to be drawn '''
-    pass
+    self.logger.info('updating timeline..')
+    return True
+
+  def init_config(self):
+    self.logger.info('Initialising config file')
+    self.config = Config()
+    try:
+      self.config.load_config()
+    except ConfigParser.ParsingError as e:
+      self.logger.error(e)
+      curses.endwin()
+      print('Error reading config file.\nSee log file for details')
+      exit(1)
+    except AssertionError as e:
+      self.logger.error(e)
+      curses.endwin()
+      print('config file is empty or non existent.')
+      print('Please see README for examples on creating one.')
+      exit(1)
+    mandatory_values = {
+        'account':('accountname', 'oauthpin'),
+        'preferences':('scrollback', 'ssl', 'confirmexit', 'interval')
+    }
+    (config_ok, reason) = self.config.ensure_config(mandatory_values)
+    if not config_ok:
+      self.logger.info(reason + ' is missing from config file.') 
+      exit(1)
+      #TODO: alert user and continue no further
+    self.config = self.config.get_config()
+    self.logger.info('Config file loaded')
+
+  def init_main_window(self):
+    self.logger.info('Initialising main window')
+    self.main_window = MainWindow(self.stdscr, self.config)
+    self.main_window.draw()
+    self.logger.info('Main window loaded')
 
 def main():
   curses.wrapper(CurseTwitter)
