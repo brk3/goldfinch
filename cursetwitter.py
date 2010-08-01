@@ -4,6 +4,7 @@ try:
   import curses
   import curses.wrapper
   import CustomTextbox
+  import gobject
   from oauth import oauth
   from oauthtwitter import OAuthApi
 except ImportError as e:
@@ -59,24 +60,22 @@ class MainWindow:
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3, self.term_width)
 
   def _draw_statusbar(self, msg, pos):
+    assert pos == 'top' or pos == 'bottom', 'status bar pos must be either \
+        \'top\' or \'bottom\'. You gave: ' + pos
     if pos.lower() == 'top':
       ypos = 0
     elif pos.lower() == 'bottom':
       ypos = self.term_height-2
-    else:
-      raise AssertionError("status bar pos must be either 'top' or 'bottom'.\
-          you gave: " + pos)
     self.stdscr.addch(ypos, 0, ' ', curses.A_REVERSE)
     self.stdscr.addstr(ypos, 1, msg, curses.A_REVERSE)
     for i in range(len(msg)+1, self.term_width):
       try:
-        self.stdscr.addch(ypos, i, ' ',
-            curses.A_REVERSE)
+        self.stdscr.addch(ypos, i, ' ', curses.A_REVERSE)
       except curses.error:
         pass
 
 class Config:
-  def __init__(self):
+  def __init__(self, validate=None):
     '''Inits a Config object and sets rc location to
     os.path.join($HOME, 'cursetwitter', 'cursetwitter'+'rc').
     '''
@@ -94,16 +93,25 @@ class Config:
         'See README for examples on how to create one.'])
     return cp
 
+  def ensure_config(self, config, mandatory_values):
+    '''Ensure config contains certain section:options.''' 
+    for section,opt_list in mandatory_values.items():
+      if not config.has_section(section):
+        return (False, section)
+      for opt in opt_list:
+        if not opt in config.options(section):
+          return (False, opt)
+    return (True, None)
+
 class CurseTwitter:
   __version__ = '0.1'
-  name = 'cursetwitter'
 
   def __init__(self, stdscr):
     self.init_logger()
     try:
       self.config = Config().load_config()
     except ConfigParser.ParsingError as e:
-      logger.error(e)
+      self.logger.error(e)
       curses.endwin()
       print('Error reading config file.\nSee log file for details')
       exit(1)
@@ -113,11 +121,13 @@ class CurseTwitter:
       print('config file is empty or non existent.')
       print('Please see README for examples on creating one.')
       exit(1)
-    self.logger.info('Starting ' + self.name)
+    self.logger.info('Starting cursetwitter')
     self.main_window = MainWindow(stdscr, self.config)
     self.main_window.draw()
     self.logger.debug('MainWindow initialized')
-    self.init_twitter_api()
+    self.twitter = self.init_twitter_api()
+    self.logger.info('Twitter API sucessfully initialized')
+    #gobject.timeout_add(self.interval*1000, self._timer_cb)
     while True:
       self.parse_input()
 
@@ -138,7 +148,7 @@ class CurseTwitter:
 
   def init_logger(self):
     ''' Sets up a logging object which can be accessed from other classes '''
-    self.logger = logging.getLogger(self.name)
+    self.logger = logging.getLogger('cursetwitter')
     self.logger.setLevel(logging.DEBUG)
     handler = logging.handlers.RotatingFileHandler(
         'cursetwitter.log', maxBytes=1024*100, backupCount=3)
@@ -163,8 +173,12 @@ class CurseTwitter:
     consumer_secret = 'RzyFiyYutvxnKBzEUG2utiCejYgkPoDLAqMNNx3o'
     twitter = OAuthApi(consumer_key, consumer_secret, 
         access_token['oauth_token'], access_token['oauth_token_secret'])
-    self.logger.debug(twitter.GetUserTimeline())
-    self.logger.info('Twitter API sucessfully initialized')
+    return twitter
+
+  def update_timeline_cb(self):
+    ''' Get the user's list of friends, get each of their statuses, and pass
+    to main window to be drawn '''
+    pass
 
 def main():
   curses.wrapper(CurseTwitter)
