@@ -1,0 +1,12 @@
+[account]
+AccountName = Personal
+UserName = brk3
+OAuthPin = 3902673
+
+[preferences]
+Scrollback = 50
+SSL = yes
+ConfirmExit = yes
+
+[theme]
+# not implemented yet

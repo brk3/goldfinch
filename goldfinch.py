@@ -4,8 +4,7 @@ try:
   import curses
   import curses.wrapper
   import CustomTextbox
-  from oauth import oauth
-  from oauthtwitter import OAuthApi
+  import tweepy
 except ImportError as e:
   print(e)
   exit(1)
@@ -18,7 +17,7 @@ import cPickle
 
 class MainWindow:
   def __init__(self, stdscr, config):
-    self.logger = logging.getLogger('cursetwitter' +
+    self.logger = logging.getLogger('goldfinch' +
         "." + self.__class__.__name__)
     self.stdscr = stdscr
     self.config = config
@@ -26,8 +25,8 @@ class MainWindow:
   def draw(self):
     '''Draws the interface components to the screen'''
     (self.term_height, self.term_width) = self.stdscr.getmaxyx()
-    self._draw_statusbar('cursetwitter' + ' v' + 
-        CurseTwitter.__version__, 'top')
+    self._draw_statusbar('goldfinch' + ' v' + 
+        GoldFinch.__version__, 'top')
     self._draw_statusbar(self.config.get('account', 'accountname'), 'bottom')
     self._draw_inputbox()
     self._draw_timeline(None)
@@ -76,12 +75,12 @@ class MainWindow:
 class Config():
   def __init__(self, validate=None):
     '''Inits a Config object and sets rc location to
-    os.path.join($HOME, 'cursetwitter', 'cursetwitter'+'rc').
+    os.path.join($HOME, 'goldfinch', 'goldfinch'+'rc').
     '''
     self.logger = logging.getLogger(''.join(
-        ['cursetwitter', '.', self.__class__.__name__]))
-    self.filename = os.path.join(os.environ['HOME'], '.cursetwitter',
-        'cursetwitterrc')
+        ['goldfinch', '.', self.__class__.__name__]))
+    self.filename = os.path.join(os.environ['HOME'], '.goldfinch',
+        'goldfinchrc')
     self.cp = None
 
   def load_config(self):
@@ -105,23 +104,17 @@ class Config():
     assert self.cp is not None, 'Config.cp is None'
     return self.cp
 
-class CurseTwitter:
+class GoldFinch:
   __version__ = '0.1'
 
   def __init__(self, stdscr):
     self.init_logger()
     self.stdscr = stdscr
-    self.logger.info('Starting cursetwitter')
+    self.logger.info('Starting goldfinch')
 
     self.init_config()
     self.init_main_window()
     self.init_twitter_api()
-
-    refresh_interval = self.config.getint('preferences', 'interval')
-    if refresh_interval < 60:
-      self.logger.info('interval cannot be less than 60 seconds')
-      refresh_interval = 60
-    # ...
 
     while True:
       self.parse_input()
@@ -143,10 +136,10 @@ class CurseTwitter:
 
   def init_logger(self):
     ''' Sets up a logging object which can be accessed from other classes '''
-    self.logger = logging.getLogger('cursetwitter')
+    self.logger = logging.getLogger('goldfinch')
     self.logger.setLevel(logging.DEBUG)
     handler = logging.handlers.RotatingFileHandler(
-        'cursetwitter.log', maxBytes=1024*100, backupCount=3)
+        'goldfinch.log', maxBytes=1024*100, backupCount=3)
     handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - \
         %(message)s')
@@ -155,27 +148,21 @@ class CurseTwitter:
 
   def init_twitter_api(self):
     self.logger.info('Initialising twitter Api')
+    access_token = {}
     try:
-      FILE = open(os.path.join(os.environ['HOME'], 
-          '.cursetwitter', 'access_token'))
-      access_token = cPickle.load(FILE)
+      with open(os.path.join(os.environ['HOME'], 
+          '.goldfinch', 'access_token')) as f:
+        access_token['key'] = f.readline().strip()
+        access_token['secret'] = f.readline().strip()
     except IOError as e:
       self.logger.error(e)
       #TODO: alert user and offer to generate one
-    except cPickle.PickleError as e:
-      self.logger.error(e)
-      #TODO: alert user and offer to generate a new one
     consumer_key = 'BRqDtHfWWNjNm4tLKj3g'
     consumer_secret = 'RzyFiyYutvxnKBzEUG2utiCejYgkPoDLAqMNNx3o'
-    self.twitter = OAuthApi(consumer_key, consumer_secret, 
-        access_token['oauth_token'], access_token['oauth_token_secret'])
+    auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+    auth.set_access_token(access_token['key'], access_token['secret'])
+    self.api = tweepy.API(auth)
     self.logger.info('Twitter Api loaded')
-
-  def update_timeline_cb(self):
-    ''' Get the user's list of friends, get each of their statuses, and pass
-    to main window to be drawn '''
-    self.logger.info('updating timeline..')
-    return True
 
   def init_config(self):
     self.logger.info('Initialising config file')
@@ -195,7 +182,7 @@ class CurseTwitter:
       exit(1)
     mandatory_values = {
         'account':('accountname', 'oauthpin'),
-        'preferences':('scrollback', 'ssl', 'confirmexit', 'interval')
+        'preferences':('scrollback', 'ssl', 'confirmexit')
     }
     (config_ok, reason) = self.config.ensure_config(mandatory_values)
     if not config_ok:
@@ -212,7 +199,7 @@ class CurseTwitter:
     self.logger.info('Main window loaded')
 
 def main():
-  curses.wrapper(CurseTwitter)
+  curses.wrapper(GoldFinch)
 
 if __name__ == '__main__':
   main()
