@@ -14,7 +14,7 @@ class CustomTextbox(curses.textpad.Textbox):
     The code is copy-pasted as is with modifications.
     """
     if ch == curses.KEY_RESIZE:
-      if self.resize_handler is not None:
+      if self.resize_handler:
         self.resize_handler()
       
     (y, x) = self.win.getyx()
