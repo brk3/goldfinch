@@ -72,11 +72,23 @@ class MainWindow:
       except curses.error:
         pass
 
-class GoldFinchModel():
-  '''Container/volatile cache for data used by the program (model)'''
-
-  def __init__(self):
-    pass
+  def add_text_to_pager(self, content):
+    '''Draws text to the pager display.  content can be either a list
+    or a string'''
+    #TODO: add wrapping depending on screen width, and look into pages
+    if type(content) is list:
+      for line in content:
+        self.pager_pad.addstr(line+'\n')
+    elif type(content) is str:
+      self.pager_pad.addstr(content)
+    self.stdscr.move(self.term_height-1,\
+      2)  # move the cursor to the input box
+    self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3, self.term_width)
+    self.input_win.refresh()
+ 
+  def clear_pager(self):
+    '''Clears the pager contents'''
+    self._draw_pager()
 
 class GoldFinch:
   '''curses based twitter client, written in python (controller)'''
@@ -103,13 +115,16 @@ class GoldFinch:
     if len(input_parts) == 1:
       if input_parts[0] == '/quit' or '/quit'.startswith(input_parts[0]):
         self.destruct()
+      if input_parts[0] == '/clear' or '/clear'.startswith(input_parts[0]):
+        #TODO: add ctrl-L for this
+        self.main_window.clear_pager()
     # two word commands
     if len(input_parts) == 2:
       if (input_parts[0] == '/list' or '/list'.startswith(input_parts[0]))\
           and (input_parts[1] == 'friends' or\
           'friends'.startswith(input_parts[1])):
-        self.api.get_friends()
-        # ... display
+        friend_list = self.api.get_friends()
+        self.main_window.add_text_to_pager(friend_list)
 
     if input_valid:
       self.main_window.input_box.clear()
@@ -157,8 +172,9 @@ class GoldFinch:
               'See README for examples on how to create one.'])
       self.destruct(output)
     mandatory_values = {
+        # TODO: finalise these values
         'account':('accountname', 'oauthpin'),
-        'preferences':('scrollback', 'ssl', 'confirmexit')
+        'preferences':['timeout']
     }
     (config_ok, reason) = config.ensure_config(mandatory_values)
     if not config_ok:
@@ -190,9 +206,14 @@ class TwitterController:
   '''Makes use of the twitter API through 'tweepy'
   http://github.com/joshthecoder/tweepy'''
 
-  def __init__(self):
+  def __init__(self, config=None):
     self.logger = logging.getLogger(''.join(
         ['goldfinch', '.', self.__class__.__name__]))
+    if config:
+      timeout = int(config.get('preferences', 'Timeout'))
+    else:
+      timeout = 500  # default
+    self.memcache = tweepy.cache.MemoryCache(timeout)
 
   def perform_auth(self, access_token_file):
     '''Reads in user's oauth key and secret from access_token_file
@@ -207,11 +228,21 @@ class TwitterController:
     auth.set_access_token(access_token['key'], access_token['secret'])
     self.api = tweepy.API(auth)
 
-  def get_friends(self):
+  def get_friends(self, force_update=False):
+    '''Query the api for the user's list of friends.  The memory cache
+    is used by default unless force_update is specified'''
     assert self.api, 'TwitterController.api is not initialised, call\
       TwitterController.perform_auth first'
-    friend_list = self.api.friends_ids()
-    return [self.api.get_user(friend).screen_name for friend in friend_list]
+    self.logger.debug('fetching friend ids, force_update=' + str(force_update))
+    if not force_update:
+      friend_list = self.memcache.get('friend_list')
+      if friend_list:
+        return friend_list
+    friend_ids = self.api.friends_ids()
+    #TODO: can this be sped up/wrapped into one call?
+    friend_list = [self.api.get_user(friend).screen_name for friend in friend_ids]
+    self.memcache.store('friend_list', friend_list)
+    return friend_list
 
 class Config():
   '''Provides convenience methods for loading a config file and validating
@@ -234,6 +265,7 @@ class Config():
     for section,opt_list in mandatory_values.items():
       if not self.cp.has_section(section):
         return (False, section)
+      self.logger.debug(opt_list)
       for opt in opt_list:
         if not opt in self.cp.options(section):
           return (False, opt)
