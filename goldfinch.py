@@ -1,10 +1,12 @@
 # $Id$
+# ex: expandtab tabstop=2 shiftwidth=2:
 
 try:
   import curses
   import curses.wrapper
-  import CustomTextbox
-  import tweepy
+  import goldfinch.customtextbox
+  import goldfinch.config
+  import goldfinch.controllers.twitter
 except ImportError as e:
   print(e)
   exit(1)
@@ -12,19 +14,26 @@ except ImportError as e:
 import os
 import logging
 import logging.handlers
-import ConfigParser
+import Queue
+import threading
+import cPickle
 
 class MainWindow:
   '''Represents the interface on the screen (view)'''
-
+  
   def __init__(self, stdscr, config=None):
+    '''Sets up a MainWindow.
+
+    stdscr  -- a curses WindowObject to draw to
+    config  -- a ConfigParser.Config object (see docs for possible values)
+    '''
     self.logger = logging.getLogger('goldfinch' +
         "." + self.__class__.__name__)
     self.stdscr = stdscr
     self.config = config
 
   def draw(self):
-    '''Draws the interface components to the screen'''
+    '''Draw the various interface components to the screen'''
     (self.term_height, self.term_width) = self.stdscr.getmaxyx()
     self._draw_statusbar('top', 'goldfinch ' + GoldFinch.__version__)
     self._draw_statusbar('bottom')
@@ -35,17 +44,22 @@ class MainWindow:
     self.stdscr.refresh()
 
   def _draw_inputbox(self):
-    '''Draws the input box to the main window using a CustomTextbox.
+    '''Draws the input box to the main window using a goldfinch.CustomTextbox.
     The input marker is drawn outside the input box.
+
     '''
     self.stdscr.addch(self.term_height-1, 0, '>') 
     self.input_win = curses.newwin(1, self.term_width, self.term_height-1, 2)
-    self.input_box = CustomTextbox.CustomTextbox(self.input_win, 
+    self.input_box = goldfinch.customtextbox.CustomTextbox(self.input_win, 
         lambda: self.draw())
     self.input_win.overwrite(self.stdscr)
     self.input_win.refresh()
   
   def _draw_pager(self):
+    '''Draws the main 'pager' area to the screen.  Set preferences:scrollback
+    in the config to adjust the scrollback buffer.
+    
+    '''
     if self.config:
       scrollback = int(self.config.get('preferences', 'Scrollback'))
     else:
@@ -54,6 +68,13 @@ class MainWindow:
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3, self.term_width)
 
   def _draw_statusbar(self, pos, msg=None):
+    '''Draws a status bar to the screen.
+
+    pos -- The portion of the screen to place it.
+           Can be either 'top' or 'bottom'
+    msg -- Optional text to place on the status bar.
+
+    '''
     assert pos == 'top' or pos == 'bottom', 'status bar pos must be either\
         \'top\' or \'bottom\'. You gave: ' + pos
     if pos.lower() == 'top':
@@ -71,21 +92,7 @@ class MainWindow:
         self.stdscr.addch(ypos, i, ' ', curses.A_REVERSE)
       except curses.error:
         pass
-
-  def add_text_to_pager(self, content):
-    '''Draws text to the pager display.  content can be either a list
-    or a string'''
-    #TODO: add wrapping depending on screen width, and look into pages
-    if type(content) is list:
-      for line in content:
-        self.pager_pad.addstr(line+'\n')
-    elif type(content) is str:
-      self.pager_pad.addstr(content)
-    self.stdscr.move(self.term_height-1,\
-      2)  # move the cursor to the input box
-    self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3, self.term_width)
-    self.input_win.refresh()
- 
+   
   def clear_pager(self):
     '''Clears the pager contents'''
     self._draw_pager()
@@ -94,6 +101,11 @@ class GoldFinch:
   '''curses based twitter client, written in python (controller)'''
 
   __version__ = 'svn' + filter(str.isdigit, '$Revision$')
+  __author__ = 'Paul Bourke <pauldbourke@gmail.com>'
+
+
+  config_dir = os.path.join(os.environ['HOME'], '.goldfinch')
+  config_file = os.path.join(config_dir, 'goldfinchrc')
 
   def __init__(self, stdscr):
     self.init_logger()
@@ -101,36 +113,84 @@ class GoldFinch:
     self.logger.info('Starting goldfinch')
     self.config = self.init_config()
     self.main_window = self.init_main_window()
-    self.api = self.init_twitter_api()
+    self.controller = self.init_twitter_api()
+    self.add_text_to_pager(self.controller.get_home_timeline())
     while True:
       self.parse_input()
 
   def parse_input(self):
-    input_valid = False
+    input_valid = True
     input_str = self.main_window.input_box.edit().strip()
     self.logger.debug('Got input: ' + input_str)
-    input_parts = input_str.split()
+    command = input_str.split()[0].strip()
+    arg_line = input_str[len(command):].strip()
 
-    # one word commands
-    if len(input_parts) == 1:
-      if input_parts[0] == '/quit' or '/quit'.startswith(input_parts[0]):
-        self.destruct()
-      if input_parts[0] == '/clear' or '/clear'.startswith(input_parts[0]):
+    if len(command) > 1:
+      if command == '/quit' or command == '/q':
+        self.cleanup()
+      elif command == '/clear' or command == '/c':
         #TODO: add ctrl-L for this
         self.main_window.clear_pager()
-    # two word commands
-    if len(input_parts) == 2:
-      if (input_parts[0] == '/list' or '/list'.startswith(input_parts[0]))\
-          and (input_parts[1] == 'friends' or\
-          'friends'.startswith(input_parts[1])):
-        friend_list = self.api.get_friends()
-        self.main_window.add_text_to_pager(friend_list)
+      elif command == '/post' or command == '/p':
+        if len(arg_line) <= self.controller.max_msg_length:
+          self.logger.info('posting msg (' + len(arg_line) + ')')
+          self.controller.api.update_status(arg_line)
+        else:
+          # TODO: msg too long, notify user
+          self.logger.info('msg length too long, ' + len(arg_line) +
+              ' chars, skipping.')
+          pass
+      elif command == '/list' or command == '/l':
+        # must be one arg to this command
+        if arg_line == 'friends':
+          ret_queue = Queue.Queue()
+          #TODO: ensure these threads are not already running
+          consumer_thread = threading.Thread(target=self.add_text_to_pager,\
+              args=(ret_queue,))
+          self.logger.debug('starting consumer thread')
+          consumer_thread.start()
+          producer_thread = threading.Thread(target=self.controller.get_friends,\
+              args=(ret_queue,))
+          self.logger.debug('starting producer thread')
+          producer_thread.start()
+      elif command == '/refresh' or command == '/r':
+        self.add_text_to_pager(self.controller.get_home_timeline())
+      else:
+        input_valid = False
 
     if input_valid:
       self.main_window.input_box.clear()
     else:
-      # TODO: alert user
+      #TODO: alert user
       self.main_window.input_box.clear()
+
+  def add_text_to_pager(self, content_queue):
+    '''Draws text to the pager display.
+
+    content_queue -- text to display which should either be a list, string,
+                     or a Queue.Queue containing one of these.
+    '''
+    #TODO: add wrapping depending on screen width, and look into pages
+    if type(content_queue) is Queue.Queue:
+      content = content_queue.get()
+    else:
+      content = content_queue
+    if type(content) is list:
+      for line in content:
+        try:
+          self.main_window.pager_pad.addstr(str(line)+'\n')
+        except curses.error:
+          pass
+    elif type(content) is str:
+      try:
+        self.main_window.pager_pad.addstr(content)
+      except curses.error:
+        pass
+    self.main_window.stdscr.move(self.main_window.term_height-1,\
+        2)  # move the cursor to the input box
+    self.main_window.pager_pad.refresh(0, 0, 1, 0, self.main_window.term_height-3,\
+        self.main_window.term_width)
+    self.main_window.input_win.refresh()
 
   def init_logger(self):
     ''' Sets up a logging object which can be accessed from other classes '''
@@ -145,40 +205,37 @@ class GoldFinch:
     self.logger.addHandler(handler)
 
   def init_twitter_api(self):
-    api = TwitterController()
+    api = goldfinch.controllers.twitter.TwitterController(GoldFinch.config_dir)
     self.logger.info('Authenticating twitter api')
     try:
       api.perform_auth(os.path.join(os.environ['HOME'], 
         '.goldfinch', 'access_token'))
     except IOError as e:
       self.logger.error(e)
-      # TODO: alert user
+      #TODO: alert user
     self.logger.info('Done')
     return api
     
   def init_config(self):
     self.logger.info('Initialising config file')
-    config = Config()
-    filename = 'goldfinchrc'
+    config = goldfinch.config.Config()
     ret = ()
     try:
-      config_file = os.path.join(os.environ['HOME'], '.goldfinch',
-          filename)
-      ret = config.load_config(config_file)
+      ret = config.load_config(GoldFinch.config_file)
     except ConfigParser.ParsingError as e:
-      self.destruct('Error reading config file.\nSee log file for details')
+      self.cleanup('Error reading config file.\nSee log file for details')
     if not ret:
-      output = ''.join([filename, ' is empty or non existent.  ',
+      output = ''.join([config_file, ' is empty or non existent.  ',
               'See README for examples on how to create one.'])
-      self.destruct(output)
+      self.cleanup(output)
     mandatory_values = {
-        # TODO: finalise these values
+        #TODO: finalise these values
         'account':('accountname', 'oauthpin'),
         'preferences':['timeout']
     }
     (config_ok, reason) = config.ensure_config(mandatory_values)
     if not config_ok:
-      self.destruct(reason + ' is missing from config file.')
+      self.cleanup(reason + ' is missing from config file.')
     config = config.get_config()
     self.logger.info('Done')
     return config
@@ -190,9 +247,11 @@ class GoldFinch:
     self.logger.info('Done')
     return main_window
 
-  def destruct(self, error_msg=None):
+  def cleanup(self, error_msg=None):
     '''Clean up, write out an optional error message and exit.  (No error
-    message implies a normal exit.'''
+    message implies a normal exit.
+    
+    '''
     ret = 0
     curses.endwin() 
     if error_msg:
@@ -201,79 +260,6 @@ class GoldFinch:
       print(error_msg)
     self.logger.info('exiting..')
     exit(ret)
-
-class TwitterController:
-  '''Makes use of the twitter API through 'tweepy'
-  http://github.com/joshthecoder/tweepy'''
-
-  def __init__(self, config=None):
-    self.logger = logging.getLogger(''.join(
-        ['goldfinch', '.', self.__class__.__name__]))
-    if config:
-      timeout = int(config.get('preferences', 'Timeout'))
-    else:
-      timeout = 500  # default
-    self.memcache = tweepy.cache.MemoryCache(timeout)
-
-  def perform_auth(self, access_token_file):
-    '''Reads in user's oauth key and secret from access_token_file
-    (one per line), and authenticates and initialises the api'''
-    access_token = {}
-    with open(access_token_file) as f:
-      access_token['key'] = f.readline().strip()
-      access_token['secret'] = f.readline().strip()
-    consumer_key = 'BRqDtHfWWNjNm4tLKj3g'
-    consumer_secret = 'RzyFiyYutvxnKBzEUG2utiCejYgkPoDLAqMNNx3o'
-    auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
-    auth.set_access_token(access_token['key'], access_token['secret'])
-    self.api = tweepy.API(auth)
-
-  def get_friends(self, force_update=False):
-    '''Query the api for the user's list of friends.  The memory cache
-    is used by default unless force_update is specified'''
-    assert self.api, 'TwitterController.api is not initialised, call\
-      TwitterController.perform_auth first'
-    self.logger.debug('fetching friend ids, force_update=' + str(force_update))
-    if not force_update:
-      friend_list = self.memcache.get('friend_list')
-      if friend_list:
-        return friend_list
-    friend_ids = self.api.friends_ids()
-    #TODO: can this be sped up/wrapped into one call?
-    friend_list = [self.api.get_user(friend).screen_name for friend in friend_ids]
-    self.memcache.store('friend_list', friend_list)
-    return friend_list
-
-class Config():
-  '''Provides convenience methods for loading a config file and validating
-  it's contents.
-  '''
-
-  def __init__(self):
-    self.logger = logging.getLogger(''.join(
-        ['goldfinch', '.', self.__class__.__name__]))
-    self.cp = None
-
-  def load_config(self, filename):
-    assert filename, 'filename is empty in call to Config.load_config'
-    self.cp = ConfigParser.SafeConfigParser()
-    ret = self.cp.read(filename)
-    return ret
-
-  def ensure_config(self, mandatory_values):
-    '''Ensure config contains certain section:options.''' 
-    for section,opt_list in mandatory_values.items():
-      if not self.cp.has_section(section):
-        return (False, section)
-      self.logger.debug(opt_list)
-      for opt in opt_list:
-        if not opt in self.cp.options(section):
-          return (False, opt)
-    return (True, None)
-
-  def get_config(self):
-    assert self.cp, 'Config.cp is None, try Config.load_config first'
-    return self.cp
 
 def main():
   curses.wrapper(GoldFinch)

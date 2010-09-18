@@ -1,4 +1,4 @@
-# $Id$
+# $Id: CustomTextbox.py 39 2010-08-06 19:52:19Z bourke $
 
 import curses.textpad
 
