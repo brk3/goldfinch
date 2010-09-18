@@ -26,6 +26,7 @@ class MainWindow:
 
     stdscr  -- a curses WindowObject to draw to
     config  -- a ConfigParser.Config object (see docs for possible values)
+
     '''
     self.logger = logging.getLogger('goldfinch' +
         "." + self.__class__.__name__)
@@ -41,7 +42,6 @@ class MainWindow:
     self._draw_pager()
     self.stdscr.move(self.term_height-1,\
         2)  # move the cursor to the input box
-    self.stdscr.refresh()
 
   def _draw_inputbox(self):
     '''Draws the input box to the main window using a goldfinch.CustomTextbox.
@@ -54,6 +54,7 @@ class MainWindow:
         lambda: self.draw())
     self.input_win.overwrite(self.stdscr)
     self.input_win.refresh()
+    self.stdscr.refresh()
   
   def _draw_pager(self):
     '''Draws the main 'pager' area to the screen.  Set preferences:scrollback
@@ -66,6 +67,7 @@ class MainWindow:
       scrollback = 100  # default
     self.pager_pad = curses.newpad(scrollback, self.term_width)
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3, self.term_width)
+    self.stdscr.refresh()
 
   def _draw_statusbar(self, pos, msg=None):
     '''Draws a status bar to the screen.
@@ -75,6 +77,7 @@ class MainWindow:
     msg -- Optional text to place on the status bar.
 
     '''
+    # TODO: add way to align text left or right
     assert pos == 'top' or pos == 'bottom', 'status bar pos must be either\
         \'top\' or \'bottom\'. You gave: ' + pos
     if pos.lower() == 'top':
@@ -92,7 +95,45 @@ class MainWindow:
         self.stdscr.addch(ypos, i, ' ', curses.A_REVERSE)
       except curses.error:
         pass
-   
+    self.stdscr.refresh()
+
+  def show_notification(self, msg):
+    '''Shows a notification in the bottom status bar.
+
+    msg -- text to display
+    '''
+    self._draw_statusbar('bottom', msg)
+    self.stdscr.refresh()
+
+  def add_text_to_pager(self, content_queue):
+    '''Draws text to the pager display.
+
+    content_queue -- text to display which should either be a list, string,
+                     or a Queue.Queue containing one of these.
+    '''
+    #TODO: add wrapping depending on screen width, and look into pages
+    if type(content_queue) is Queue.Queue:
+      content = content_queue.get()
+    else:
+      content = content_queue
+    if type(content) is list:
+      for line in content:
+        try:
+          self.pager_pad.addstr(str(line)+'\n')
+        except curses.error:
+          pass
+    elif type(content) is str:
+      try:
+        self.pager_pad.addstr(content)
+      except curses.error:
+        pass
+    self.stdscr.move(self.term_height-1,\
+        2)  # move the cursor to the input box
+    self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
+        self.term_width)
+    self.input_win.refresh()
+    self.stdscr.refresh()
+ 
   def clear_pager(self):
     '''Clears the pager contents'''
     self._draw_pager()
@@ -114,7 +155,9 @@ class GoldFinch:
     self.config = self.init_config()
     self.main_window = self.init_main_window()
     self.controller = self.init_twitter_api()
-    self.add_text_to_pager(self.controller.get_home_timeline())
+    self.main_window.show_notification('Getting timeline..')
+    self.main_window.add_text_to_pager(self.controller.get_home_timeline())
+    self.main_window.show_notification('Done.')
     while True:
       self.parse_input()
 
@@ -133,12 +176,15 @@ class GoldFinch:
         self.main_window.clear_pager()
       elif command == '/post' or command == '/p':
         if len(arg_line) <= self.controller.max_msg_length:
-          self.logger.info('posting msg (' + len(arg_line) + ')')
+          self.main_window.show_notification('Posting message..')
+          self.logger.info('posting msg (' + str(len(arg_line)) + ')')
           self.controller.api.update_status(arg_line)
+          self.main_window.show_notification('Done!')
         else:
-          # TODO: msg too long, notify user
-          self.logger.info('msg length too long, ' + len(arg_line) +
-              ' chars, skipping.')
+          warn_msg = 'msg length too long, must be < '+\
+              str(self.controller.max_msg_length)
+          self.main_window.show_notification(warn_msg)
+          self.logger.info(warn_msg)
           pass
       elif command == '/list' or command == '/l':
         # must be one arg to this command
@@ -154,43 +200,18 @@ class GoldFinch:
           self.logger.debug('starting producer thread')
           producer_thread.start()
       elif command == '/refresh' or command == '/r':
-        self.add_text_to_pager(self.controller.get_home_timeline())
+        self.main_window.show_notification('Refreshing timeline..') 
+        self.main_window.add_text_to_pager(self.controller.get_home_timeline())
+        self.main_window.show_notification('Done.') 
       else:
         input_valid = False
 
     if input_valid:
+      self.main_window.show_notification('')
       self.main_window.input_box.clear()
     else:
-      #TODO: alert user
+      self.main_window.show_notification('Unknown command.  Try /help')
       self.main_window.input_box.clear()
-
-  def add_text_to_pager(self, content_queue):
-    '''Draws text to the pager display.
-
-    content_queue -- text to display which should either be a list, string,
-                     or a Queue.Queue containing one of these.
-    '''
-    #TODO: add wrapping depending on screen width, and look into pages
-    if type(content_queue) is Queue.Queue:
-      content = content_queue.get()
-    else:
-      content = content_queue
-    if type(content) is list:
-      for line in content:
-        try:
-          self.main_window.pager_pad.addstr(str(line)+'\n')
-        except curses.error:
-          pass
-    elif type(content) is str:
-      try:
-        self.main_window.pager_pad.addstr(content)
-      except curses.error:
-        pass
-    self.main_window.stdscr.move(self.main_window.term_height-1,\
-        2)  # move the cursor to the input box
-    self.main_window.pager_pad.refresh(0, 0, 1, 0, self.main_window.term_height-3,\
-        self.main_window.term_width)
-    self.main_window.input_win.refresh()
 
   def init_logger(self):
     ''' Sets up a logging object which can be accessed from other classes '''
@@ -206,13 +227,16 @@ class GoldFinch:
 
   def init_twitter_api(self):
     api = goldfinch.controllers.twitter.TwitterController(GoldFinch.config_dir)
+    self.main_window.show_notification('Authenticating..')
     self.logger.info('Authenticating twitter api')
     try:
       api.perform_auth(os.path.join(os.environ['HOME'], 
         '.goldfinch', 'access_token'))
     except IOError as e:
       self.logger.error(e)
-      #TODO: alert user
+      self.main_window.show_notification('Authentication error, see log for\
+          info')
+    self.main_window.show_notification('Ready')
     self.logger.info('Done')
     return api
     
