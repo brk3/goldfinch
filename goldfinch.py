@@ -32,6 +32,7 @@ class MainWindow:
         "." + self.__class__.__name__)
     self.stdscr = stdscr
     self.config = config
+    self.mode = 'edit'
 
   def draw(self):
     '''Draw the various interface components to the screen'''
@@ -43,6 +44,11 @@ class MainWindow:
     self.stdscr.move(self.term_height-1,\
         2)  # move the cursor to the input box
 
+  def set_mode(self, mode):
+    assert mode == 'edit' or mode == 'command'
+    self.logger.debug('set mode to ' + mode)
+    self.mode = mode
+
   def _draw_inputbox(self):
     '''Draws the input box to the main window using a goldfinch.CustomTextbox.
     The input marker is drawn outside the input box.
@@ -50,8 +56,12 @@ class MainWindow:
     '''
     self.stdscr.addch(self.term_height-1, 0, '>') 
     self.input_win = curses.newwin(1, self.term_width, self.term_height-1, 2)
-    self.input_box = goldfinch.customtextbox.CustomTextbox(self.input_win, 
-        lambda: self.draw())
+    handlers = {
+      curses.KEY_RESIZE:[self.draw], 
+      curses.ascii.ESC:[self.set_mode, 'command']
+      }
+    self.input_box = goldfinch.customtextbox.CustomTextbox(self.input_win,\
+         handlers)
     self.input_win.overwrite(self.stdscr)
     self.input_win.refresh()
     self.stdscr.refresh()
@@ -162,19 +172,19 @@ class GoldFinch:
       self.parse_input()
 
   def parse_input(self):
-    input_valid = True
     input_str = self.main_window.input_box.edit().strip()
-    self.logger.debug('Got input: ' + input_str)
+    input_valid = True
     command = input_str.split()[0].strip()
     arg_line = input_str[len(command):].strip()
+    self.logger.debug('Got input: ' + input_str)
 
     if len(command) > 1:
-      if command == '/quit' or command == '/q':
+      if command == ':quit' or command == ':q':
         self.cleanup()
-      elif command == '/clear' or command == '/c':
+      elif command == ':clear' or command == ':c':
         #TODO: add ctrl-L for this
         self.main_window.clear_pager()
-      elif command == '/post' or command == '/p':
+      elif command == ':post' or command == ':p':
         if len(arg_line) <= self.controller.max_msg_length:
           self.main_window.show_notification('Posting message..')
           self.logger.info('posting msg (' + str(len(arg_line)) + ')')
@@ -186,20 +196,20 @@ class GoldFinch:
           self.main_window.show_notification(warn_msg)
           self.logger.info(warn_msg)
           pass
-      elif command == '/list' or command == '/l':
+      elif command == ':list' or command == ':l':
         # must be one arg to this command
         if arg_line == 'friends':
           ret_queue = Queue.Queue()
           #TODO: ensure these threads are not already running
-          consumer_thread = threading.Thread(target=self.add_text_to_pager,\
-              args=(ret_queue,))
+          consumer_thread = threading.Thread(target=self.main_window.\
+              add_text_to_pager, args=(ret_queue,))
           self.logger.debug('starting consumer thread')
           consumer_thread.start()
           producer_thread = threading.Thread(target=self.controller.get_friends,\
               args=(ret_queue,))
           self.logger.debug('starting producer thread')
           producer_thread.start()
-      elif command == '/refresh' or command == '/r':
+      elif command == ':refresh' or command == ':r':
         self.main_window.show_notification('Refreshing timeline..') 
         self.main_window.add_text_to_pager(self.controller.get_home_timeline())
         self.main_window.show_notification('Done.') 
@@ -210,7 +220,7 @@ class GoldFinch:
       self.main_window.show_notification('')
       self.main_window.input_box.clear()
     else:
-      self.main_window.show_notification('Unknown command.  Try /help')
+      self.main_window.show_notification('Unknown command.  Try :help')
       self.main_window.input_box.clear()
 
   def init_logger(self):

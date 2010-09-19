@@ -3,26 +3,33 @@
 import curses.textpad
 
 class CustomTextbox(curses.textpad.Textbox):
-  def __init__(self, win, resize_handler=None):
+  def __init__(self, win, handlers):
+    '''Initialises a CustomTextbox.
+
+    win      -- curses.stdscr to attach the Textbox to
+    handlers -- dict of various handlers to attatch, e.g.
+                {curses.ascii.ESC:esc_handler}
+
+    '''
     curses.textpad.Textbox.__init__(self, win)
-    self.resize_handler = resize_handler
+    self.handlers = handlers
+    self.mode = 'edit'
 
   def do_command(self, ch):
-    """
-    Overrides curses.textpad.Textbox.do_command() in order to hook 
-    KEY_RESIZE.
-    The code is copy-pasted as is with modifications.
-    """
-    if ch == curses.KEY_RESIZE:
-      if self.resize_handler:
-        self.resize_handler()
-      
+    '''Overrides curses.textpad.Textbox.do_command() in order to hook 
+    KEY_RESIZE and other keys.
+    The code is mostly copy-pasted as is, with modifications.
+
+    ''' 
     (y, x) = self.win.getyx()
     self.lastcmd = ch
+    for event,handler in self.handlers.items():
+      if ch == event:
+        handler[0](handler[1])
     if curses.ascii.isprint(ch):
         if y < self.maxy or x < self.maxx:
             self._insert_printable_char(ch)
-    elif ch == curses.ascii.NAK:
+    elif ch == curses.ascii.NAK:                           # ^u
         self.clear()
     elif ch == curses.ascii.SOH:                           # ^a
         self.win.move(y, 0)
@@ -82,7 +89,7 @@ class CustomTextbox(curses.textpad.Textbox):
     return 1
 
   def insert_printable_str(self, msg):
-    """ Adds a string to the Textbox """
+    '''Adds a string to the Textbox''' 
     assert len(msg) < 256, "len(msg) must be < 256"
     self.clear()
     for i in range(0, len(msg)):
