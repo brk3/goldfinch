@@ -132,17 +132,51 @@ class MainWindow:
           self.pager_pad.addstr(str(line)+'\n')
         except curses.error:
           pass
+        except UnicodeEncodeError as e:
+          #TODO: fix unicode support
+          self.logger.error(e)
     elif type(content) is str:
       try:
         self.pager_pad.addstr(content)
       except curses.error:
         pass
+      except UnicodeEncodeError as e:
+        #TODO: fix unicode support
+        self.logger.error(e)
     self.stdscr.move(self.term_height-1,\
         2)  # move the cursor to the input box
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
         self.term_width)
     self.input_win.refresh()
     self.stdscr.refresh()
+
+  def add_status_to_pager(self, screen_name, message):
+    '''Wrapper for add_text_to_pager to draw a status/tweet in a formatted
+    way.
+
+    screen_name -- user name or screen name of the tweeter
+    message -- message content
+    '''
+    screen_name_padding = 20
+    the_content = []
+    max_chunk_size = self.term_width - screen_name_padding
+
+    # add the first chunk of content, right justified
+    the_content.append(''.join([screen_name.ljust(screen_name_padding-1), 
+        message[0:max_chunk_size]]))
+
+    # if there are more chunks, break onto subsequent lines
+    # chunk_size*2 to start at the second chunk in line
+    if max_chunk_size < len(message):
+      for i in range(max_chunk_size*2, len(message)+max_chunk_size, max_chunk_size):
+        this_chunk_size = len(message[i-max_chunk_size:i])
+        the_content.append(message[i-max_chunk_size:i]\
+            .rjust(screen_name_padding+this_chunk_size-1))
+
+    the_content.append('')
+
+    # draw the content
+    self.add_text_to_pager(the_content)
  
   def clear_pager(self):
     '''Clears the pager contents'''
@@ -166,7 +200,9 @@ class GoldFinch:
     self.main_window = self.init_main_window()
     self.controller = self.init_twitter_api()
     self.main_window.show_notification('Getting timeline..')
-    self.main_window.add_text_to_pager(self.controller.get_home_timeline())
+    #self.main_window.add_text_to_pager(self.controller.get_home_timeline())
+    for screen_name, status in self.controller.get_home_timeline():
+      self.main_window.add_status_to_pager(screen_name, status)
     self.main_window.show_notification('Done.')
     while True:
       self.parse_input()
@@ -259,7 +295,7 @@ class GoldFinch:
     except ConfigParser.ParsingError as e:
       self.cleanup('Error reading config file.\nSee log file for details')
     if not ret:
-      output = ''.join([config_file, ' is empty or non existent.  ',
+      output = ''.join([self.config_file, ' is empty or non existent.  ',
               'See README for examples on how to create one.'])
       self.cleanup(output)
     mandatory_values = {

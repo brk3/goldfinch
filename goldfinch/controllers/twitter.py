@@ -76,8 +76,4 @@ class TwitterController(controller.Controller):
     their friends.  Screen names are padded to 20 chars for formatting.'''
     self.logger.info('fetching user home timeline')
     home_timeline = self.api.home_timeline()
-    return [
-        (item.user.screen_name+': ').ljust(20) +
-        item.text
-        for item in home_timeline
-        ]
+    return [(item.user.screen_name, item.text) for item in home_timeline]
