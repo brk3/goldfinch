@@ -58,7 +58,7 @@ class MainWindow:
     self.input_win = curses.newwin(1, self.term_width, self.term_height-1, 2)
     handlers = {
       curses.KEY_RESIZE:[self.draw], 
-      curses.ascii.ESC:[self.set_mode, 'command']
+      curses.ascii.ESC:[self.set_mode, ['command']]
       }
     self.input_box = goldfinch.customtextbox.CustomTextbox(self.input_win,\
          handlers)

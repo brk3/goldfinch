@@ -1,6 +1,7 @@
 # $Id: CustomTextbox.py 39 2010-08-06 19:52:19Z bourke $
 
 import curses.textpad
+import logging
 
 class CustomTextbox(curses.textpad.Textbox):
   def __init__(self, win, handlers):
@@ -14,6 +15,8 @@ class CustomTextbox(curses.textpad.Textbox):
     curses.textpad.Textbox.__init__(self, win)
     self.handlers = handlers
     self.mode = 'edit'
+    self.logger = logging.getLogger('goldfinch' +
+        "." + self.__class__.__name__)
 
   def do_command(self, ch):
     '''Overrides curses.textpad.Textbox.do_command() in order to hook 
@@ -23,9 +26,12 @@ class CustomTextbox(curses.textpad.Textbox):
     ''' 
     (y, x) = self.win.getyx()
     self.lastcmd = ch
-    for event,handler in self.handlers.items():
+    for event,handler_item in self.handlers.items():
       if ch == event:
-        handler[0](handler[1])
+        # unpack the handler function and args
+        handler_func = handler_item[0]
+        handler_args = handler_item[1]
+        handler_func(*handler_args)
     if curses.ascii.isprint(ch):
         if y < self.maxy or x < self.maxx:
             self._insert_printable_char(ch)
