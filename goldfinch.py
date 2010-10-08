@@ -46,8 +46,9 @@ class MainWindow:
 
   def set_mode(self, mode):
     assert mode == 'edit' or mode == 'command'
-    self.logger.debug('set mode to ' + mode)
     self.mode = mode
+    self.show_notification(mode, 'right')
+    self.logger.debug('set mode to ' + mode)
 
   def _draw_inputbox(self):
     '''Draws the input box to the main window using a goldfinch.CustomTextbox.
@@ -79,7 +80,7 @@ class MainWindow:
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3, self.term_width)
     self.stdscr.refresh()
 
-  def _draw_statusbar(self, pos, msg=None):
+  def _draw_statusbar(self, pos, msg=None, align='left'):
     '''Draws a status bar to the screen.
 
     pos -- The portion of the screen to place it.
@@ -88,8 +89,7 @@ class MainWindow:
 
     '''
     # TODO: add way to align text left or right
-    assert pos == 'top' or pos == 'bottom', 'status bar pos must be either\
-        \'top\' or \'bottom\'. You gave: ' + pos
+    assert pos == 'top' or pos == 'bottom'
     if pos.lower() == 'top':
       ypos = 0
     elif pos.lower() == 'bottom':
@@ -107,12 +107,12 @@ class MainWindow:
         pass
     self.stdscr.refresh()
 
-  def show_notification(self, msg):
+  def show_notification(self, msg, align='left'):
     '''Shows a notification in the bottom status bar.
 
     msg -- text to display
     '''
-    self._draw_statusbar('bottom', msg)
+    self._draw_statusbar('bottom', msg, align)
     self.stdscr.refresh()
 
   def add_text_to_pager(self, content_queue):
@@ -200,10 +200,11 @@ class GoldFinch:
     self.main_window = self.init_main_window()
     self.controller = self.init_twitter_api()
     self.main_window.show_notification('Getting timeline..')
-    #self.main_window.add_text_to_pager(self.controller.get_home_timeline())
     for screen_name, status in self.controller.get_home_timeline():
       self.main_window.add_status_to_pager(screen_name, status)
     self.main_window.show_notification('Done.')
+    
+    
     while True:
       self.parse_input()
 
@@ -212,6 +213,7 @@ class GoldFinch:
     input_valid = True
     command = input_str.split()[0].strip()
     arg_line = input_str[len(command):].strip()
+
     self.logger.debug('Got input: ' + input_str)
 
     if len(command) > 1:
@@ -332,6 +334,10 @@ class GoldFinch:
     exit(ret)
 
 def main():
+  # this env variable reduces the delay from the ESC key
+  # (see http://en.chys.info/2009/09/esdelay-ncurses/)
+  if not 'ESCDELAY' in os.environ:
+    os.environ['ESCDELAY'] = '25'
   curses.wrapper(GoldFinch)
 
 if __name__ == '__main__':
