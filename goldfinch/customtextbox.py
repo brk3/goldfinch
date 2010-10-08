@@ -28,9 +28,12 @@ class CustomTextbox(curses.textpad.Textbox):
     self.lastcmd = ch
     for event,handler_item in self.handlers.items():
       if ch == event:
-        # unpack the handler function and args
+        # unpack the handler function and any args
         handler_func = handler_item[0]
-        handler_args = handler_item[1]
+        if len(handler_item) > 1:
+          handler_args = handler_item[1]
+        else:
+          handler_args = []
         handler_func(*handler_args)
     if curses.ascii.isprint(ch):
         if y < self.maxy or x < self.maxx:
