@@ -4,9 +4,10 @@
 try:
   import curses
   import curses.wrapper
-  import goldfinch.customtextbox
   import goldfinch.config
   import goldfinch.controllers.twitter
+  from goldfinch.customtextbox import CustomTextbox
+  from goldfinch.customtextbox import InputHandler 
 except ImportError as e:
   print(e)
   exit(1)
@@ -61,13 +62,45 @@ class MainWindow:
     '''
     self.stdscr.addch(self.term_height-1, 0, '>') 
     self.input_win = curses.newwin(1, self.term_width, self.term_height-1, 2)
-    handlers = {
-      curses.KEY_RESIZE:[self.draw], 
-      curses.ascii.ESC:[self.set_mode, ['command']],
-      ord('i'):[self.set_mode, ['edit']],
-      ord('j'):[self.pager_pad.scroll]
-      }
-    self.input_box = goldfinch.customtextbox.CustomTextbox(self.input_win,\
+    # create a list of InputHandler objects to handle key press events on the
+    # input box
+    handlers = []
+    resize_handler = InputHandler(\
+        curses.KEY_RESIZE,
+        self.draw,
+        [],
+        ['edit', 'command'])
+    handlers.append(resize_handler)
+
+    command_mode = InputHandler(\
+        curses.ascii.ESC,
+        self.set_mode,
+        ['command'],
+        ['edit'])
+    handlers.append(command_mode)
+
+    edit_mode = InputHandler(\
+        ord('i'),
+        self.set_mode,
+        ['edit'],
+        ['command'])
+    handlers.append(edit_mode)
+
+    scroll_up = InputHandler(\
+        ord('k'),
+        self.scroll_pager,
+        [-1],
+        ['command'])
+    handlers.append(scroll_up)
+
+    scroll_down = InputHandler(\
+        ord('j'),
+        self.scroll_pager,
+        [1],
+        ['command'])
+    handlers.append(scroll_down)
+
+    self.input_box = CustomTextbox(self.input_win,\
          handlers)
     self.input_win.overwrite(self.stdscr)
     self.input_win.refresh()
@@ -83,7 +116,10 @@ class MainWindow:
     else:
       scrollback = 100  # default
     self.pager_pad = curses.newpad(scrollback, self.term_width)
-    self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3, self.term_width)
+    self.scroll_pos = 0
+    self.pager_pad.refresh(self.scroll_pos, 0, 1, 0, self.term_height-3, self.term_width)
+    self.pager_pad.scrollok(True)
+    self.pager_pad.idlok(True)
     self.stdscr.refresh()
 
   def _draw_statusbar(self, pos, msg=None, align='left'):
@@ -109,8 +145,8 @@ class MainWindow:
     for i in range(left_dim, self.term_width):
       try:
         self.stdscr.addch(ypos, i, ' ', curses.A_REVERSE)
-      except curses.error:
-        pass
+      except curses.error as e:
+        self.logger.error(e)
     self.stdscr.refresh()
 
   def show_notification(self, msg, align='left'):
@@ -154,6 +190,19 @@ class MainWindow:
         self.term_width)
     self.input_win.refresh()
     self.stdscr.refresh()
+
+  def scroll_pager(self, lines):
+    '''Scroll the pager.  Should be able to use window.scroll for this
+    but couldn't get to work.
+    
+    lines -- number of lines to scroll. (negative to scroll up)
+    
+    '''
+    if lines < 0 and self.scroll_pos == 0:
+      return
+    self.scroll_pos = self.scroll_pos + lines
+    self.pager_pad.refresh(self.scroll_pos, 0, 1,\
+        0, self.term_height-3, self.term_width)
 
   def add_status_to_pager(self, screen_name, message):
     '''Wrapper for add_text_to_pager to draw a status/tweet in a formatted

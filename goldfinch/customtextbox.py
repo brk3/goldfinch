@@ -89,15 +89,10 @@ class CustomTextbox(curses.textpad.Textbox):
         self.win.move(y-1, x)
         if x > self._end_of_line(y-1):
           self.win.move(y-1, self._end_of_line(y-1))
-    for event,handler_item in self.handlers.items():
-      if ch == event:
-        # unpack the handler function and any args
-        handler_func = handler_item[0]
-        if len(handler_item) > 1:
-          handler_args = handler_item[1]
-        else:
-          handler_args = []
-        handler_func(*handler_args)
+    for handler in self.handlers:
+      if ch == handler.event_id:
+        if self.mode in handler.modes:
+          handler.cb_func(*handler.cb_args)
     return 1
 
   def insert_printable_str(self, msg):
@@ -111,3 +106,22 @@ class CustomTextbox(curses.textpad.Textbox):
     (y, x) = self.win.getyx()
     self.win.deleteln()
     self.win.move(y, 0)
+
+class InputHandler():
+  '''Container class for an input event.  To be used in conjunction with
+  CustomTextbox.'''
+
+  def __init__(self, event_id, cb_func, cb_args, modes):
+    '''Initialises an InputHandler.
+
+    event_id -- the key which triggers the event (e.g. ord('i'))
+    cb_func -- callback function to fire on event
+    cb_args -- list of arguments to pass to cb_func
+    modes -- list of modes the event can take place in.
+            values are edit, command
+
+    '''
+    self.event_id = event_id
+    self.cb_func = cb_func
+    self.cb_args = cb_args
+    self.modes = modes
