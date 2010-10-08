@@ -39,15 +39,19 @@ class MainWindow:
     (self.term_height, self.term_width) = self.stdscr.getmaxyx()
     self._draw_statusbar('top', 'goldfinch ' + GoldFinch.__version__)
     self._draw_statusbar('bottom')
-    self._draw_inputbox()
     self._draw_pager()
+    self._draw_inputbox()
     self.stdscr.move(self.term_height-1,\
         2)  # move the cursor to the input box
 
   def set_mode(self, mode):
     assert mode == 'edit' or mode == 'command'
-    self.mode = mode
-    self.show_notification(mode, 'right')
+    self.input_box.mode = mode
+    self.show_notification('['+mode+']', 'right')
+    if mode == 'command':
+      curses.curs_set(0) # hide
+    else:
+      curses.curs_set(1)
     self.logger.debug('set mode to ' + mode)
 
   def _draw_inputbox(self):
@@ -59,7 +63,9 @@ class MainWindow:
     self.input_win = curses.newwin(1, self.term_width, self.term_height-1, 2)
     handlers = {
       curses.KEY_RESIZE:[self.draw], 
-      curses.ascii.ESC:[self.set_mode, ['command']]
+      curses.ascii.ESC:[self.set_mode, ['command']],
+      ord('i'):[self.set_mode, ['edit']],
+      ord('j'):[self.pager_pad.scroll]
       }
     self.input_box = goldfinch.customtextbox.CustomTextbox(self.input_win,\
          handlers)
@@ -121,7 +127,6 @@ class MainWindow:
     content_queue -- text to display which should either be a list, string,
                      or a Queue.Queue containing one of these.
     '''
-    #TODO: add wrapping depending on screen width, and look into pages
     if type(content_queue) is Queue.Queue:
       content = content_queue.get()
     else:
@@ -130,16 +135,16 @@ class MainWindow:
       for line in content:
         try:
           self.pager_pad.addstr(str(line)+'\n')
-        except curses.error:
-          pass
+        except curses.error as e:
+          self.logger.error(e)
         except UnicodeEncodeError as e:
-          #TODO: fix unicode support
+          #TODO: fix unicode support (see note at top of curses howto)
           self.logger.error(e)
     elif type(content) is str:
       try:
         self.pager_pad.addstr(content)
-      except curses.error:
-        pass
+      except curses.error as e:
+        self.logger.error(e)
       except UnicodeEncodeError as e:
         #TODO: fix unicode support
         self.logger.error(e)
@@ -173,6 +178,7 @@ class MainWindow:
         the_content.append(message[i-max_chunk_size:i]\
             .rjust(screen_name_padding+this_chunk_size-1))
 
+    # add a new line 
     the_content.append('')
 
     # draw the content
@@ -203,7 +209,6 @@ class GoldFinch:
     for screen_name, status in self.controller.get_home_timeline():
       self.main_window.add_status_to_pager(screen_name, status)
     self.main_window.show_notification('Done.')
-    
     
     while True:
       self.parse_input()
