@@ -44,20 +44,25 @@ class TwitterController(controller.Controller):
       with open(self.cachefile, 'r') as f:
         try:
           friend_dict = cPickle.load(f)
+          self.logger.debug('found cache file')
         except (cPickle.PickleError, EOFError), e:
           self.logger.debug(traceback.format_exc())
           self.logger.info('could not unpickle friend_dict, fetching a new one')
     except IOError as e:
       self.logger.info('no cachefile present, will create one')
+    self.logger.debug('fetching latest friend ids')
     latest_friend_ids = self.api.friends_ids()
+    self.logger.debug('got latest friend ids')
     if friend_dict:
       # see whats changed
       current_friend_ids = friend_dict.keys()
       ids_added = set(latest_friend_ids) - set(current_friend_ids)
       ids_removed = set(current_friend_ids) - set(latest_friend_ids)
       for f_id in ids_added:
+        self.logger.debug('found new friend, fetching details')
         friend_dict[f_id] = self.api.get_user(f_id).screen_name
       for f_id in ids_removed:
+        self.logger.debug('found deleted friend, removing')
         del(friend_dict[f_id])
     else:
       # we have to fetch all ids:screen_names
@@ -66,9 +71,11 @@ class TwitterController(controller.Controller):
     with open(self.cachefile, 'w') as f:
       try:
         cPickle.dump(friend_dict, f)
+        self.logger.debug('(re)wrote cache file')
       except cPickle.PickleError as e:
         self.logger.debug(traceback.format_exc())
         self.logger.info('error pickling friend_dict to cache file')
+    self.logger.debug('put friend_dict.values into return queue')
     ret_queue.put(friend_dict.values()) 
 
   def get_home_timeline(self):

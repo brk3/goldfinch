@@ -43,7 +43,7 @@ class MainWindow:
     self._draw_pager()
     self._draw_inputbox()
     self.stdscr.move(self.term_height-1,\
-        2)  # move the cursor to the input box
+        0)  # move the cursor to the input box
 
   def set_mode(self, mode):
     assert mode == 'edit' or mode == 'command'
@@ -60,8 +60,7 @@ class MainWindow:
     The input marker is drawn outside the input box.
 
     '''
-    self.stdscr.addch(self.term_height-1, 0, '>') 
-    self.input_win = curses.newwin(1, self.term_width, self.term_height-1, 2)
+    self.input_win = curses.newwin(1, self.term_width, self.term_height-1, 0)
     # create a list of InputHandler objects to handle key press events on the
     # input box
     handlers = []
@@ -163,7 +162,7 @@ class MainWindow:
     content_queue -- text to display which should either be a list, string,
                      or a Queue.Queue containing one of these.
     '''
-    if type(content_queue) is Queue.Queue:
+    if isinstance(content_queue, Queue.Queue):
       content = content_queue.get()
     else:
       content = content_queue
@@ -185,7 +184,7 @@ class MainWindow:
         #TODO: fix unicode support
         self.logger.error(e)
     self.stdscr.move(self.term_height-1,\
-        2)  # move the cursor to the input box
+        0)  # move the cursor to the input box
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
         self.term_width)
     self.input_win.refresh()
@@ -255,8 +254,7 @@ class GoldFinch:
     self.main_window = self.init_main_window()
     self.controller = self.init_twitter_api()
     self.main_window.show_notification('Getting timeline..')
-    for screen_name, status in self.controller.get_home_timeline():
-      self.main_window.add_status_to_pager(screen_name, status)
+    self.init_refresh_thread()
     self.main_window.show_notification('Done.')
     
     while True:
@@ -303,7 +301,8 @@ class GoldFinch:
           producer_thread.start()
       elif command == ':refresh' or command == ':r':
         self.main_window.show_notification('Refreshing timeline..') 
-        self.main_window.add_text_to_pager(self.controller.get_home_timeline())
+        for screen_name, status in self.controller.get_home_timeline():
+          self.main_window.add_status_to_pager(screen_name, status)
         self.main_window.show_notification('Done.') 
       else:
         input_valid = False
@@ -357,7 +356,7 @@ class GoldFinch:
     mandatory_values = {
         #TODO: finalise these values
         'account':('accountname', 'oauthpin'),
-        'preferences':['timeout']
+        'preferences':['refresh']
     }
     (config_ok, reason) = config.ensure_config(mandatory_values)
     if not config_ok:
@@ -372,6 +371,13 @@ class GoldFinch:
     main_window.draw()
     self.logger.info('Done')
     return main_window
+
+  def init_refresh_thread(self):
+    # TODO: may need to add synchcronisation to pager view
+    for screen_name, status in self.controller.get_home_timeline():
+      self.main_window.add_status_to_pager(screen_name, status)
+    interval = int(self.config.get('preferences', 'refresh'))
+    threading.Timer(interval, self.init_refresh_thread).start()
 
   def cleanup(self, error_msg=None):
     '''Clean up, write out an optional error message and exit.  (No error

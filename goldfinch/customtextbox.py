@@ -14,7 +14,7 @@ class CustomTextbox(curses.textpad.Textbox):
     '''
     curses.textpad.Textbox.__init__(self, win)
     self.handlers = handlers
-    self.mode = 'edit'
+    self.mode = 'command'
     self.logger = logging.getLogger('goldfinch' +
         "." + self.__class__.__name__)
 

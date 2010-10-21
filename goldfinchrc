@@ -4,15 +4,14 @@
 
 [account]
 AccountName = Personal
+UserName = brk3
 OAuthPin = 3902673
 
 [preferences]
 Scrollback = 50
 #TODO: SSL = yes
 #TODO: ConfirmExit = yes
-# Certain less frequently updated values such as friend lists are cached to
-# improve performance.  Set this to a reasonable value.
-Timeout = 300
+Refresh = 120 
 
 [theme]
 # not implemented yet
