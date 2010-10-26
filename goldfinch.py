@@ -81,6 +81,9 @@ class MainWindow:
     # create a list of InputHandler objects to handle key press events on the
     # input box
     handlers = []
+
+    #TODO: resize event doesn't seem to get recognised when on a remote
+    #      terminal.
     resize_handler = InputHandler(\
         curses.KEY_RESIZE,
         self.draw,
@@ -116,6 +119,27 @@ class MainWindow:
         ['command'])
     handlers.append(scroll_down)
 
+    page_down = InputHandler(\
+        curses.KEY_PPAGE,
+        self.scroll_pager,
+        [-self.term_height-3],  # -3 for 2 status bars + inputbox
+        ['edit', 'command'])
+    handlers.append(page_down)
+
+    page_up = InputHandler(\
+        curses.KEY_NPAGE,
+        self.scroll_pager,
+        [self.term_height-3], 
+        ['edit', 'command'])
+    handlers.append(page_up)
+
+    space_page_down = InputHandler(\
+        curses.ascii.SP,
+        self.scroll_pager,
+        [self.term_height-3],
+        ['command'])
+    handlers.append(space_page_down)
+
     self.input_box = CustomTextbox(self.input_win,\
          handlers)
     self.input_win.overwrite(self.stdscr)
@@ -146,8 +170,9 @@ class MainWindow:
     msg -- Optional text to place on the status bar.
 
     '''
-    # TODO: add way to align text left or right
     assert pos == 'top' or pos == 'bottom'
+
+    # TODO: add way to align text left or right
     if pos.lower() == 'top':
       ypos = 0
     elif pos.lower() == 'bottom':
@@ -201,7 +226,7 @@ class MainWindow:
         #TODO: fix unicode support
         self.logger.error(e)
     self.stdscr.move(self.term_height-1,\
-        0)  # move the cursor to the input box
+        0)
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
         self.term_width)
     self.input_win.refresh()
@@ -209,16 +234,22 @@ class MainWindow:
 
   def scroll_pager(self, lines):
     '''Scroll the pager.  Should be able to use window.scroll for this
-    but couldn't get to work.
+    but couldn't get to work for some reason.
     
     lines -- number of lines to scroll. (negative to scroll up)
+    clear_before -- whether to clear the pager before updating (useful for
+                    page down/up events.
     
     '''
-    if lines < 0 and self.scroll_pos == 0:
-      return
-    self.scroll_pos = self.scroll_pos + lines
-    self.pager_pad.refresh(self.scroll_pos, 0, 1,\
-        0, self.term_height-3, self.term_width)
+    try:
+      self.pager_pad.refresh(self.scroll_pos+lines, 0, 1,\
+          0, self.term_height-3, self.term_width)
+      if (lines < 0) and (abs(lines) - self.scroll_pos > 0):
+        self.scroll_pos = 0
+      else:
+        self.scroll_pos = self.scroll_pos + lines
+    except curses.error as e:
+      self.logger.error(e)
 
   def add_status_to_pager(self, screen_name, message):
     '''Wrapper for add_text_to_pager to draw a status/tweet in a formatted
@@ -318,7 +349,8 @@ class GoldFinch:
           producer_thread.start()
       elif command == ':refresh' or command == ':r':
         self.main_window.show_notification('Refreshing timeline..') 
-        for screen_name, status in self.controller.get_home_timeline():
+        self.main_window.pager_pad.erase()
+        for screen_name, status in self.controller.get_home_timeline(30):
           self.main_window.add_status_to_pager(screen_name, status)
         self.main_window.show_notification('Done.') 
       else:
@@ -391,7 +423,9 @@ class GoldFinch:
 
   def init_refresh_thread(self):
     # TODO: may need to add synchcronisation to pager view
-    for screen_name, status in self.controller.get_home_timeline():
+    # TODO: (related to above) only update screen if pager contents have changed
+    self.main_window.pager_pad.erase()
+    for screen_name, status in self.controller.get_home_timeline(30):
       self.main_window.add_status_to_pager(screen_name, status)
     interval = int(self.config.get('preferences', 'refresh'))
     threading.Timer(interval, self.init_refresh_thread).start()

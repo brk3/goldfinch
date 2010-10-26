@@ -95,9 +95,12 @@ class TwitterController(controller.Controller):
     self.logger.debug('put friend_dict.values into return queue')
     ret_queue.put(friend_dict.values()) 
 
-  def get_home_timeline(self):
+  def get_home_timeline(self, count):
     '''Gets the users 'home timeline which is their tweets along with each of
-    their friends.  Screen names are padded to 20 chars for formatting.'''
+    their friends.  Screen names are padded to 20 chars for formatting.
+    
+    count -- Specifies the number of statuses to retrieve.
+    '''
     self.logger.info('fetching user home timeline')
-    home_timeline = self.api.home_timeline()
+    home_timeline = self.api.home_timeline(count=count)
     return [(item.user.screen_name, item.text) for item in home_timeline]
