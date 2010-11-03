@@ -8,7 +8,7 @@ UserName = brk3
 OAuthPin = 3902673
 
 [preferences]
-Scrollback = 50
+Scrollback = 200
 #TODO: SSL = yes
 #TODO: ConfirmExit = yes
 Refresh = 120 

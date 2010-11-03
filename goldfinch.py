@@ -51,6 +51,7 @@ class MainWindow:
     self.stdscr = stdscr
     self.config = config
     self.mode = 'edit'
+    self.pager_ypos = 0
 
   def draw(self):
     '''Draw the various interface components to the screen'''
@@ -151,10 +152,11 @@ class MainWindow:
     in the config to adjust the scrollback buffer.
     
     '''
+    #TODO: number of tweets should be < than this value to avoid drawing errors
     if self.config:
       scrollback = int(self.config.get('preferences', 'Scrollback'))
     else:
-      scrollback = 100  # default
+      scrollback = 200  # default
     self.pager_pad = curses.newpad(scrollback, self.term_width)
     self.scroll_pos = 0
     self.pager_pad.refresh(self.scroll_pos, 0, 1, 0, self.term_height-3, self.term_width)
@@ -208,28 +210,24 @@ class MainWindow:
       content = content_queue.get()
     else:
       content = content_queue
-    if type(content) is list:
-      for line in content:
-        try:
-          self.pager_pad.addstr(str(line)+'\n')
-        except curses.error as e:
-          self.logger.error(e)
-        except UnicodeEncodeError as e:
-          #TODO: fix unicode support (see note at top of curses howto)
-          self.logger.error(e)
-    elif type(content) is str:
+    if type(content) is not list:
+      content = [content]
+    for line in content:
       try:
-        self.pager_pad.addstr(content)
+        self.pager_pad.addstr(self.pager_ypos, 0, str(line))
+        self.pager_ypos = self.pager_ypos + 1
       except curses.error as e:
         self.logger.error(e)
+        self.logger.error(line)
       except UnicodeEncodeError as e:
-        #TODO: fix unicode support
+        #TODO: fix unicode support (see note at top of curses howto)
         self.logger.error(e)
+        self.logger.error(line)
+        break
     self.stdscr.move(self.term_height-1,\
-        0)
+        0) # after addstr the cursor will be at end of str so move back to input box
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
         self.term_width)
-    self.input_win.refresh()
     self.stdscr.refresh()
 
   def scroll_pager(self, lines):
@@ -348,8 +346,10 @@ class GoldFinch:
           self.logger.debug('starting producer thread')
           producer_thread.start()
       elif command == ':refresh' or command == ':r':
+        #TODO: add these lines to a function
         self.main_window.show_notification('Refreshing timeline..') 
         self.main_window.pager_pad.erase()
+        self.main_window.pager_ypos = 0
         for screen_name, status in self.controller.get_home_timeline(30):
           self.main_window.add_status_to_pager(screen_name, status)
         self.main_window.show_notification('Done.') 
@@ -425,6 +425,7 @@ class GoldFinch:
     # TODO: may need to add synchcronisation to pager view
     # TODO: (related to above) only update screen if pager contents have changed
     self.main_window.pager_pad.erase()
+    self.main_window.pager_ypos = 0
     for screen_name, status in self.controller.get_home_timeline(30):
       self.main_window.add_status_to_pager(screen_name, status)
     interval = int(self.config.get('preferences', 'refresh'))
