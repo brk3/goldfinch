@@ -21,10 +21,10 @@
 try:
   import curses
   import curses.wrapper
-  import goldfinch.config
-  import goldfinch.controllers.twitter
-  from goldfinch.customtextbox import CustomTextbox
-  from goldfinch.customtextbox import InputHandler 
+  import goldfinchlib.config
+  import goldfinchlib.controllers.twitter
+  from goldfinchlib.customtextbox import CustomTextbox
+  from goldfinchlib.customtextbox import InputHandler 
 except ImportError as e:
   print(e)
   exit(1)
@@ -376,7 +376,7 @@ class GoldFinch:
     self.logger.addHandler(handler)
 
   def init_twitter_api(self):
-    api = goldfinch.controllers.twitter.TwitterController(GoldFinch.config_dir)
+    api = goldfinchlib.controllers.twitter.TwitterController(GoldFinch.config_dir)
     self.main_window.show_notification('Authenticating..')
     self.logger.info('Authenticating twitter api')
     try:
@@ -392,7 +392,7 @@ class GoldFinch:
     
   def init_config(self):
     self.logger.info('Initialising config file')
-    config = goldfinch.config.Config()
+    config = goldfinchlib.config.Config()
     ret = ()
     try:
       ret = config.load_config(GoldFinch.config_file)

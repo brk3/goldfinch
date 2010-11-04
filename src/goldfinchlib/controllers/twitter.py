@@ -18,7 +18,7 @@
 # $Id$
 # ex: expandtab tabstop=2 shiftwidth=2:
 
-from goldfinch.controllers import controller
+from goldfinchlib.controllers import controller
 import tweepy
 import logging
 import traceback
