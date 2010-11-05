@@ -249,35 +249,6 @@ class MainWindow:
     except curses.error as e:
       self.logger.error(e)
 
-  def add_status_to_pager(self, screen_name, message):
-    '''Wrapper for add_text_to_pager to draw a status/tweet in a formatted
-    way.
-
-    screen_name -- user name or screen name of the tweeter
-    message -- message content
-    '''
-    screen_name_padding = 20
-    the_content = []
-    max_chunk_size = self.term_width - screen_name_padding
-
-    # add the first chunk of content, right justified
-    the_content.append(''.join([screen_name.ljust(screen_name_padding-1), 
-        message[0:max_chunk_size]]))
-
-    # if there are more chunks, break onto subsequent lines
-    # chunk_size*2 to start at the second chunk in line
-    if max_chunk_size < len(message):
-      for i in range(max_chunk_size*2, len(message)+max_chunk_size, max_chunk_size):
-        this_chunk_size = len(message[i-max_chunk_size:i])
-        the_content.append(message[i-max_chunk_size:i]\
-            .rjust(screen_name_padding+this_chunk_size-1))
-
-    # add a new line 
-    the_content.append('')
-
-    # draw the content
-    self.add_text_to_pager(the_content)
- 
   def clear_pager(self):
     '''Clears the pager contents'''
     self._draw_pager()
@@ -292,19 +263,19 @@ class GoldFinch:
   config_dir = os.path.join(os.environ['HOME'], '.goldfinch')
   config_file = os.path.join(config_dir, 'goldfinchrc')
 
-  def __init__(self, stdscr):
+  def __init__(self, stdscr=None):
     self.init_logger()
-    self.stdscr = stdscr
     self.logger.info('Starting goldfinch')
     self.config = self.init_config()
-    self.main_window = self.init_main_window()
     self.controller = self.init_twitter_api()
-    self.main_window.show_notification('Getting timeline..')
-    self.init_refresh_thread()
-    self.main_window.show_notification('Done.')
-    
-    while True:
-      self.parse_input()
+    self.stdscr = stdscr
+    if stdscr is not None:
+      self.main_window = self.init_main_window()
+      self.main_window.show_notification('Getting timeline..')
+      self.init_refresh_thread()
+      self.main_window.show_notification('Done.')
+      while True:
+        self.parse_input()
 
   def parse_input(self):
     input_str = self.main_window.input_box.edit().strip()
@@ -351,7 +322,8 @@ class GoldFinch:
         self.main_window.pager_pad.erase()
         self.main_window.pager_ypos = 0
         for screen_name, status in self.controller.get_home_timeline(30):
-          self.main_window.add_status_to_pager(screen_name, status)
+          self.main_window.add_text_to_pager(self.format_status_line(\
+              screen_name, status))
         self.main_window.show_notification('Done.') 
       else:
         input_valid = False
@@ -377,16 +349,19 @@ class GoldFinch:
 
   def init_twitter_api(self):
     api = goldfinchlib.controllers.twitter.TwitterController(GoldFinch.config_dir)
-    self.main_window.show_notification('Authenticating..')
+    if hasattr(self, 'main_window'):
+      self.main_window.show_notification('Authenticating..')
     self.logger.info('Authenticating twitter api')
     try:
       api.perform_auth(os.path.join(os.environ['HOME'], 
         '.goldfinch', 'access_token'))
     except IOError as e:
       self.logger.error(e)
-      self.main_window.show_notification('Authentication error, see log for\
-          info')
-    self.main_window.show_notification('Ready')
+      if hasattr(self, 'main_window'):
+        self.main_window.show_notification('Authentication error, see log for\
+            info')
+    if hasattr(self, 'main_window'):
+      self.main_window.show_notification('Ready')
     self.logger.info('Done')
     return api
     
@@ -427,9 +402,37 @@ class GoldFinch:
     self.main_window.pager_pad.erase()
     self.main_window.pager_ypos = 0
     for screen_name, status in self.controller.get_home_timeline(30):
-      self.main_window.add_status_to_pager(screen_name, status)
+      self.main_window.add_text_to_pager(self.format_status_line(screen_name, status))
     interval = int(self.config.get('preferences', 'refresh'))
     threading.Timer(interval, self.init_refresh_thread).start()
+
+  def format_status_line(self, screen_name, message):
+    '''Formats a status line for the pager, so everything aligns nicely.  A status line
+    consists of screen_name and the message posted by that screen_name.
+
+    screen_name -- user name or screen name of the tweeter
+    message -- message content
+    '''
+    screen_name_padding = 20
+    the_content = []
+    max_chunk_size = self.main_window.term_width - screen_name_padding
+
+    # add the first chunk of content, right justified
+    the_content.append(''.join([screen_name.ljust(screen_name_padding-1), 
+        message[0:max_chunk_size]]))
+
+    # if there are more chunks, break onto subsequent lines
+    # chunk_size*2 to start at the second chunk in line
+    if max_chunk_size < len(message):
+      for i in range(max_chunk_size*2, len(message)+max_chunk_size, max_chunk_size):
+        this_chunk_size = len(message[i-max_chunk_size:i])
+        the_content.append(message[i-max_chunk_size:i]\
+            .rjust(screen_name_padding+this_chunk_size-1))
+
+    # add a new line 
+    the_content.append('')
+
+    return the_content
 
   def cleanup(self, error_msg=None):
     '''Clean up, write out an optional error message and exit.  (No error
@@ -437,7 +440,8 @@ class GoldFinch:
     
     '''
     ret = 0
-    curses.endwin() 
+    if self.stdscr:
+      curses.endwin() 
     if error_msg:
       ret = 1
       self.logger.error(error_msg)
