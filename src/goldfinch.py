@@ -36,7 +36,7 @@ import Queue
 import threading
 import cPickle
 
-class MainWindow:
+class MainWindow(object):
   '''Represents the interface on the screen (view)'''
   
   def __init__(self, stdscr, config=None):
@@ -196,6 +196,7 @@ class MainWindow:
     '''Shows a notification in the bottom status bar.
 
     msg -- text to display
+
     '''
     self._draw_statusbar('bottom', msg, align)
     self.stdscr.refresh()
@@ -205,6 +206,7 @@ class MainWindow:
 
     content_queue -- text to display which should either be a list, string,
                      or a Queue.Queue containing one of these.
+
     '''
     if isinstance(content_queue, Queue.Queue):
       content = content_queue.get()
@@ -253,7 +255,7 @@ class MainWindow:
     '''Clears the pager contents'''
     self._draw_pager()
 
-class GoldFinch:
+class GoldFinch(object):
   '''curses based twitter client, written in python (controller)'''
 
   __version__ = 'svn' + filter(str.isdigit, '$Revision$')
@@ -262,6 +264,7 @@ class GoldFinch:
 
   config_dir = os.path.join(os.environ['HOME'], '.goldfinch')
   config_file = os.path.join(config_dir, 'goldfinchrc')
+  log_file = os.path.join(config_dir, 'logs', 'goldfinch.log')
 
   def __init__(self, stdscr=None):
     self.init_logger()
@@ -335,12 +338,19 @@ class GoldFinch:
       self.main_window.show_notification('Unknown command.  Try :help')
       self.main_window.input_box.clear()
 
-  def init_logger(self):
-    ''' Sets up a logging object which can be accessed from other classes '''
+  def init_logger(self, log_file=None):
+    '''Sets up a logging object which can be accessed from other classes.
+    
+    log_file -- path/file to put log in.  Defaults to 
+                ~/.goldfinch/logs/goldfinch.log
+
+    '''
+    if not log_file:
+      log_file = self.log_file
     self.logger = logging.getLogger('goldfinch')
     self.logger.setLevel(logging.DEBUG)
     handler = logging.handlers.RotatingFileHandler(
-        'goldfinch.log', maxBytes=1024*100, backupCount=3)
+        log_file, maxBytes=1024*100, backupCount=3)
     handler.setLevel(logging.DEBUG)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s -\
         %(message)s')
