@@ -54,7 +54,7 @@ class Dummy_MainWindow(object):
   def __init__(self):
     self.term_width = 32
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   unittest.main()
 
 

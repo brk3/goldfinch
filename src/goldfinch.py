@@ -363,8 +363,7 @@ class GoldFinch(object):
       self.main_window.show_notification('Authenticating..')
     self.logger.info('Authenticating twitter api')
     try:
-      api.perform_auth(os.path.join(os.environ['HOME'], 
-        '.goldfinch', 'access_token'))
+      api.perform_auth(os.path.join(self.config_dir, 'access_token'))
     except IOError as e:
       self.logger.error(e)
       if hasattr(self, 'main_window'):
