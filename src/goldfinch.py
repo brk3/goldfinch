@@ -25,6 +25,7 @@ try:
   import goldfinchlib.controllers.twitter
   from goldfinchlib.customtextbox import CustomTextbox
   from goldfinchlib.customtextbox import InputHandler 
+  from goldfinchlib.statusbar import StatusBar
 except ImportError as e:
   print(e)
   exit(1)
@@ -52,12 +53,13 @@ class MainWindow(object):
     self.config = config
     self.mode = 'edit'
     self.pager_ypos = 0
+    (self.term_height, self.term_width) = self.stdscr.getmaxyx()
+    self.statusbar_top = StatusBar(0, self.stdscr)
+    self.statusbar_bottom = StatusBar(self.term_height-2, self.stdscr)
 
   def draw(self):
     '''Draw the various interface components to the screen'''
-    (self.term_height, self.term_width) = self.stdscr.getmaxyx()
-    self._draw_statusbar('top', 'goldfinch ' + GoldFinch.__version__)
-    self._draw_statusbar('bottom')
+    self._draw_statusbars()
     self._draw_pager()
     self._draw_inputbox()
     self.stdscr.move(self.term_height-1,\
@@ -66,7 +68,7 @@ class MainWindow(object):
   def set_mode(self, mode):
     assert mode == 'edit' or mode == 'command'
     self.input_box.mode = mode
-    self.show_notification('['+mode+']', 'right')
+    self.statusbar_bottom.add_text('['+mode+']', 'right')
     if mode == 'command':
       curses.curs_set(0) # hide
     else:
@@ -164,42 +166,11 @@ class MainWindow(object):
     self.pager_pad.idlok(True)
     self.stdscr.refresh()
 
-  def _draw_statusbar(self, pos, msg=None, align='left'):
-    '''Draws a status bar to the screen.
-
-    pos -- The portion of the screen to place it.
-           Can be either 'top' or 'bottom'
-    msg -- Optional text to place on the status bar.
-
-    '''
-    assert pos == 'top' or pos == 'bottom'
-
-    # TODO: add way to align text left or right
-    if pos.lower() == 'top':
-      ypos = 0
-    elif pos.lower() == 'bottom':
-      ypos = self.term_height-2
-    if msg:
-      self.stdscr.addch(ypos, 0, ' ', curses.A_REVERSE)
-      self.stdscr.addstr(ypos, 1, msg, curses.A_REVERSE)
-    left_dim = 0
-    if msg:
-      left_dim = len(msg)+1
-    for i in range(left_dim, self.term_width):
-      try:
-        self.stdscr.addch(ypos, i, ' ', curses.A_REVERSE)
-      except curses.error as e:
-        self.logger.error(e)
-    self.stdscr.refresh()
-
-  def show_notification(self, msg, align='left'):
-    '''Shows a notification in the bottom status bar.
-
-    msg -- text to display
-
-    '''
-    self._draw_statusbar('bottom', msg, align)
-    self.stdscr.refresh()
+  def _draw_statusbars(self):
+    self.statusbar_top.draw()
+    self.statusbar_bottom.draw()
+    self.statusbar_top.add_text('goldfinch ' + GoldFinch.__version__, 'left')
+    self.statusbar_bottom.add_text(''.join(['[', self.mode, ']']), 'right')
 
   def add_text_to_pager(self, content_queue):
     '''Draws text to the pager display.
@@ -274,9 +245,9 @@ class GoldFinch(object):
     self.stdscr = stdscr
     if stdscr is not None:
       self.main_window = self.init_main_window()
-      self.main_window.show_notification('Getting timeline..')
+      self.main_window.statusbar_bottom.add_text('Getting timeline..', 'left')
       self.init_refresh_thread()
-      self.main_window.show_notification('Done.')
+      self.main_window.statusbar_bottom.add_text('Done.', 'left')
       while True:
         self.parse_input()
 
@@ -296,14 +267,14 @@ class GoldFinch(object):
         self.main_window.clear_pager()
       elif command == ':post' or command == ':p':
         if len(arg_line) <= self.controller.max_msg_length:
-          self.main_window.show_notification('Posting message..')
+          self.main_window.statusbar_bottom.add_text('Posting message..', 'left')
           self.logger.info('posting msg (' + str(len(arg_line)) + ')')
           self.controller.api.update_status(arg_line)
-          self.main_window.show_notification('Done!')
+          self.main_window.statusbar_bottom.add_text('Done!', 'left')
         else:
           warn_msg = 'msg length too long, must be < '+\
               str(self.controller.max_msg_length)
-          self.main_window.show_notification(warn_msg)
+          self.main_window.statusbar_bottom.add_text(warn_msg, 'left')
           self.logger.info(warn_msg)
           pass
       elif command == ':list' or command == ':l':
@@ -321,21 +292,21 @@ class GoldFinch(object):
           producer_thread.start()
       elif command == ':refresh' or command == ':r':
         #TODO: add these lines to a function
-        self.main_window.show_notification('Refreshing timeline..') 
+        self.main_window.statusbar_bottom.add_text('Refreshing timeline..', 'left')
         self.main_window.pager_pad.erase()
         self.main_window.pager_ypos = 0
         for screen_name, status in self.controller.get_home_timeline(30):
           self.main_window.add_text_to_pager(self.format_status_line(\
               screen_name, status))
-        self.main_window.show_notification('Done.') 
+        self.main_window.statusbar_bottom.add_text('Done.', 'left')
       else:
         input_valid = False
 
     if input_valid:
-      self.main_window.show_notification('')
+      self.main_window.statusbar_bottom.add_text('', 'left')
       self.main_window.input_box.clear()
     else:
-      self.main_window.show_notification('Unknown command.  Try :help')
+      self.main_window.statusbar_bottom.add_text('Unknown command.  Try :help', 'left')
       self.main_window.input_box.clear()
 
   def init_logger(self, log_file=None):
@@ -360,17 +331,17 @@ class GoldFinch(object):
   def init_twitter_api(self):
     api = goldfinchlib.controllers.twitter.TwitterController(GoldFinch.config_dir)
     if hasattr(self, 'main_window'):
-      self.main_window.show_notification('Authenticating..')
+      self.main_window.statusbar_bottom.add_text('Authenticating..', 'left')
     self.logger.info('Authenticating twitter api')
     try:
       api.perform_auth(os.path.join(self.config_dir, 'access_token'))
     except IOError as e:
       self.logger.error(e)
       if hasattr(self, 'main_window'):
-        self.main_window.show_notification('Authentication error, see log for\
-            info')
+        self.main_window.statusbar_bottom.add_text('Authentication error, see log for\
+            info', 'left')
     if hasattr(self, 'main_window'):
-      self.main_window.show_notification('Ready')
+      self.main_window.statusbar_bottom.add_text('Ready', 'left')
     self.logger.info('Done')
     return api
     

@@ -21,24 +21,56 @@
 import curses
 
 class StatusBar(object):
-  def __init__(self, ):
+  def __init__(self, ypos, stdscr):
+    '''Creates a single line 'statusbar' that can be placed on 
+    a curses window.
+    position -- The portion of the screen to place it.
+                Can either be 'top or 'bottom'
+    stdscr   -- Window object returned by curses.initscr()
+
+    '''
+    self.stdscr = stdscr
+    (self.term_height, self.term_width) = self.stdscr.getmaxyx()
+    self.ypos = ypos
     self.text_left = ''
     self.text_right = ''
-    self.position = ''
 
-  def draw(self, position, stdscr):
-    assert position == 'top' or position == 'bottom'
-    (self.term_height, self.term_width) = stdscr.getmaxyx()
-    self.position = position
-    if self.position == 'top':
-      ypos = 0
-    elif self.position == 'bottom':
-      ypos = self.term_height-2
-    for i in range(0, self.term_width):
-      try:
-        stdscr.addch(ypos, i, ' ', curses.A_REVERSE)
-      except curses.error as e:
-        pass
-    stdscr.refresh()
+  def draw(self):
+    if self.text_left:
+      # add left text and padding
+      self.stdscr.addch(self.ypos, 0, ' ', curses.A_REVERSE)
+      self.stdscr.addstr(self.ypos, 1, self.text_left, curses.A_REVERSE)
+      # paint rest up to possible right text
+      for i in range(len(self.text_left)+1, self.term_width-len(self.text_right)-1):
+        try:
+          self.stdscr.addch(self.ypos, i, ' ', curses.A_REVERSE)
+        except curses.error as e: 
+          pass
+    else:
+      # paint all the way up to possible right text
+      for i in range(0, self.term_width-len(self.text_right)-1):
+        try:
+          self.stdscr.addch(self.ypos, i, ' ', curses.A_REVERSE)
+        except curses.error as e: 
+          pass
+    start_text_at = self.term_width - len(self.text_right) - 1
+    if self.text_right:
+      # add right text and padding
+      self.stdscr.addstr(self.ypos, start_text_at, self.text_right, curses.A_REVERSE)
+      self.stdscr.addstr(self.ypos, 1, self.text_left, curses.A_REVERSE)
+    else:
+      for i in range(start_text_at, self.term_width):
+        try:
+          self.stdscr.addch(self.ypos, i, ' ', curses.A_REVERSE)
+        except curses.error as e: 
+          pass
+    self.stdscr.refresh()
 
+  def add_text(self, text, align):
+    assert align == 'left' or align == 'right'
+    if align == 'left':
+      self.text_left = text
+    elif align ==  'right':
+      self.text_right = text
+    self.draw()
 
