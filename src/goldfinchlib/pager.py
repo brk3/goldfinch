@@ -54,6 +54,8 @@ class Pager(object):
 
   def add_text(self, text):
     '''Add a line or lines of text to the pager'''
+    assert hasattr(self, 'pager_pad'), 'You must call Pager.draw() ' +\
+        'prior to adding text.'
     self.content_queue.put(text)
     self._draw_text()
 
@@ -62,17 +64,18 @@ class Pager(object):
     if type(content) is not list:
       content = [content]
     for line in content:
-      self.logger.debug('drawing: ' + line)
       try:
         self.pager_pad.addstr(self.text_ypos, 0, str(line))
         self.text_ypos = self.text_ypos + 1
       except curses.error as e:
-        self.logger.error(e)
-        self.logger.error(line)
+        if self.logger:
+          self.logger.error(e)
+          self.logger.error(line)
       except UnicodeEncodeError as e:
         #TODO: fix unicode support (see note at top of curses howto)
-        self.logger.error(e)
-        self.logger.error(line)
+        if self.logger:
+          self.logger.error(e)
+          self.logger.error(line)
         break
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
         self.term_width)
