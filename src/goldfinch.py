@@ -255,6 +255,13 @@ class GoldFinch(object):
     '''
     if not log_file:
       log_file = self.log_file
+    if not os.path.isdir(os.path.dirname(log_file)):
+      os.makedirs(os.path.dirname(log_file))
+    if not os.path.exists(log_file):
+      try:
+        open(log_file, 'w').close()
+      except IOError as e:
+        self.cleanup(e) 
     self.logger = logging.getLogger('goldfinch')
     self.logger.setLevel(logging.DEBUG)
     handler = logging.handlers.RotatingFileHandler(
@@ -357,11 +364,10 @@ class GoldFinch(object):
     
     '''
     ret = 0
-    if self.stdscr:
+    if hasattr(self, 'stdscr'):
       curses.endwin() 
     if error_msg:
       ret = 1
-      self.logger.error(error_msg)
       print(error_msg)
     self.logger.info('exiting..')
     exit(ret)
