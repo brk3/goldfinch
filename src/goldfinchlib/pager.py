@@ -20,20 +20,82 @@
 
 import curses
 
+import Queue
+
 class Pager(object):
-  def __init__(self, stdscr, scrollback):
-    self.stdscr = stdscr
+  '''Creates a simple WindowObject returned by curses.newpad and 
+  adds convience functions for drawing text, scrolling, etc.
+  
+  '''
+
+  def __init__(self, scrollback, stdscr, logger=None):
+    '''Initialises a Pager object.
+
+    scrollback -- how many lines to hold in the scroll buffer
+    stdscr -- curses window to draw to
+    logger -- optional logger object mainly for debug purposes
+
+    '''
     self.scrollback = scrollback
+    self.stdscr = stdscr
+    self.logger = logger
     self.scroll_pos = 0
+    self.text_ypos = 0
+    self.content_queue = Queue.Queue()
     (self.term_height, self.term_width) = self.stdscr.getmaxyx()
 
   def draw(self):
-    '''Creates a window from curses.newpad and draws to stdscr'''
-    self.pager_pad = curses.newpad(scrollback, self.term_width) 
+    '''Draw the pager to screen'''
+    self.pager_pad = curses.newpad(self.scrollback, self.term_width) 
     self.pager_pad.refresh(self.scroll_pos, 0, 1, 0, self.term_height-3, self.term_width)
     self.pager_pad.scrollok(True)
     self.pager_pad.idlok(True)
     self.stdscr.refresh()
 
   def add_text(self, text):
-    pass
+    '''Add a line or lines of text to the pager'''
+    self.content_queue.put(text)
+    self._draw_text()
+
+  def _draw_text(self):
+    content = self.content_queue.get()
+    if type(content) is not list:
+      content = [content]
+    for line in content:
+      self.logger.debug('drawing: ' + line)
+      try:
+        self.pager_pad.addstr(self.text_ypos, 0, str(line))
+        self.text_ypos = self.text_ypos + 1
+      except curses.error as e:
+        self.logger.error(e)
+        self.logger.error(line)
+      except UnicodeEncodeError as e:
+        #TODO: fix unicode support (see note at top of curses howto)
+        self.logger.error(e)
+        self.logger.error(line)
+        break
+    self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
+        self.term_width)
+    self.stdscr.refresh()
+
+  def scroll(self, lines): 
+    '''Scroll the pager.  Should be able to use window.scroll for this
+    but couldn't get to work for some reason.
+    
+    lines -- number of lines to scroll. (negative to scroll up)
+
+    '''
+    try:
+      self.pager_pad.refresh(self.scroll_pos+lines, 0, 1,\
+          0, self.term_height-3, self.term_width)
+      if (lines < 0) and (abs(lines) - self.scroll_pos > 0):
+        self.scroll_pos = 0
+      else:
+        self.scroll_pos = self.scroll_pos + lines
+    except curses.error as e:
+      self.logger.error(e)
+
+  def erase(self):
+    '''Clear the pager contents'''
+    self.pager_pad.erase()
+    self.text_ypos = 0

@@ -16,15 +16,9 @@ class PagerTestCase(unittest.TestCase):
     assert self.pager is not None
     assert self.pager.scrollback == self.scrollback
     assert self.pager.scroll_pos == 0
+    assert self.pager_ypos == 0
     assert (self.pager.term_height, self.pager.term_width) \
         == self.stdscr.getmaxyx()
-    assert self.pager.scrollback == self.scrollback
-
-  def test_add_text(self):
-    msg1 = 'hello world'
-    content_queue = Queue.Queue()
-    self.pager.add_text(msg1)
-
 
 if __name__ == '__main__':
   unittest.main()

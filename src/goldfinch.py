@@ -26,6 +26,7 @@ try:
   from goldfinchlib.customtextbox import CustomTextbox
   from goldfinchlib.customtextbox import InputHandler 
   from goldfinchlib.statusbar import StatusBar
+  from goldfinchlib.pager import Pager
 except ImportError as e:
   print(e)
   exit(1)
@@ -52,10 +53,11 @@ class MainWindow(object):
     self.stdscr = stdscr
     self.config = config
     self.mode = 'edit'
-    self.pager_ypos = 0
     (self.term_height, self.term_width) = self.stdscr.getmaxyx()
     self.statusbar_top = StatusBar(0, self.stdscr)
     self.statusbar_bottom = StatusBar(self.term_height-2, self.stdscr)
+    self.pager = Pager(200, self.stdscr, logging.getLogger(\
+        'goldfinch' + '.' + Pager.__class__.__name__)) 
 
   def draw(self):
     '''Draw the various interface components to the screen'''
@@ -110,35 +112,35 @@ class MainWindow(object):
 
     scroll_up = InputHandler(\
         ord('k'),
-        self.scroll_pager,
+        self.pager.scroll,
         [-1],
         ['command'])
     handlers.append(scroll_up)
 
     scroll_down = InputHandler(\
         ord('j'),
-        self.scroll_pager,
+        self.pager.scroll,
         [1],
         ['command'])
     handlers.append(scroll_down)
 
     page_down = InputHandler(\
         curses.KEY_PPAGE,
-        self.scroll_pager,
+        self.pager.scroll,
         [-self.term_height-3],  # -3 for 2 status bars + inputbox
         ['edit', 'command'])
     handlers.append(page_down)
 
     page_up = InputHandler(\
         curses.KEY_NPAGE,
-        self.scroll_pager,
+        self.pager.scroll,
         [self.term_height-3], 
         ['edit', 'command'])
     handlers.append(page_up)
 
     space_page_down = InputHandler(\
         curses.ascii.SP,
-        self.scroll_pager,
+        self.pager.scroll,
         [self.term_height-3],
         ['command'])
     handlers.append(space_page_down)
@@ -150,81 +152,14 @@ class MainWindow(object):
     self.stdscr.refresh()
   
   def _draw_pager(self):
-    '''Draws the main 'pager' area to the screen.  Set preferences:scrollback
-    in the config to adjust the scrollback buffer.
-    
-    '''
-    #TODO: number of tweets should be < than this value to avoid drawing errors
-    if self.config:
-      scrollback = int(self.config.get('preferences', 'Scrollback'))
-    else:
-      scrollback = 200  # default
-    self.pager_pad = curses.newpad(scrollback, self.term_width)
-    self.scroll_pos = 0
-    self.pager_pad.refresh(self.scroll_pos, 0, 1, 0, self.term_height-3, self.term_width)
-    self.pager_pad.scrollok(True)
-    self.pager_pad.idlok(True)
-    self.stdscr.refresh()
+    '''Draws the main pager area to the screen'''
+    self.pager.draw()
 
   def _draw_statusbars(self):
     self.statusbar_top.draw()
     self.statusbar_bottom.draw()
     self.statusbar_top.add_text('goldfinch ' + GoldFinch.__version__, 'left')
     self.statusbar_bottom.add_text(''.join(['[', self.mode, ']']), 'right')
-
-  def add_text_to_pager(self, content_queue):
-    '''Draws text to the pager display.
-
-    content_queue -- text to display which should either be a list, string,
-                     or a Queue.Queue containing one of these.
-
-    '''
-    if isinstance(content_queue, Queue.Queue):
-      content = content_queue.get()
-    else:
-      content = content_queue
-    if type(content) is not list:
-      content = [content]
-    for line in content:
-      try:
-        self.pager_pad.addstr(self.pager_ypos, 0, str(line))
-        self.pager_ypos = self.pager_ypos + 1
-      except curses.error as e:
-        self.logger.error(e)
-        self.logger.error(line)
-      except UnicodeEncodeError as e:
-        #TODO: fix unicode support (see note at top of curses howto)
-        self.logger.error(e)
-        self.logger.error(line)
-        break
-    self.stdscr.move(self.term_height-1,\
-        0) # after addstr the cursor will be at end of str so move back to input box
-    self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
-        self.term_width)
-    self.stdscr.refresh()
-
-  def scroll_pager(self, lines):
-    '''Scroll the pager.  Should be able to use window.scroll for this
-    but couldn't get to work for some reason.
-    
-    lines -- number of lines to scroll. (negative to scroll up)
-    clear_before -- whether to clear the pager before updating (useful for
-                    page down/up events.
-    
-    '''
-    try:
-      self.pager_pad.refresh(self.scroll_pos+lines, 0, 1,\
-          0, self.term_height-3, self.term_width)
-      if (lines < 0) and (abs(lines) - self.scroll_pos > 0):
-        self.scroll_pos = 0
-      else:
-        self.scroll_pos = self.scroll_pos + lines
-    except curses.error as e:
-      self.logger.error(e)
-
-  def clear_pager(self):
-    '''Clears the pager contents'''
-    self._draw_pager()
 
 class GoldFinch(object):
   '''curses based twitter client, written in python (controller)'''
@@ -280,23 +215,25 @@ class GoldFinch(object):
       elif command == ':list' or command == ':l':
         # must be one arg to this command
         if arg_line == 'friends':
-          ret_queue = Queue.Queue()
+          ret = self.controller.get_friends()
+          self.main_window.pager.erase()
+          self.main_window.pager.add_text(ret)
           #TODO: ensure these threads are not already running
-          consumer_thread = threading.Thread(target=self.main_window.\
-              add_text_to_pager, args=(ret_queue,))
-          self.logger.debug('starting consumer thread')
-          consumer_thread.start()
-          producer_thread = threading.Thread(target=self.controller.get_friends,\
-              args=(ret_queue,))
-          self.logger.debug('starting producer thread')
-          producer_thread.start()
+          #ret_queue = Queue.Queue()
+          #consumer_thread = threading.Thread(target=self.main_window.pager.\
+          #    add_text, args=(ret_queue,))
+          #self.logger.debug('starting consumer thread')
+          #consumer_thread.start()
+          #producer_thread = threading.Thread(target=self.controller.get_friends)
+          #self.logger.debug('starting producer thread')
+          #producer_thread.start()
       elif command == ':refresh' or command == ':r':
         #TODO: add these lines to a function
         self.main_window.statusbar_bottom.add_text('Refreshing timeline..', 'left')
         self.main_window.pager_pad.erase()
         self.main_window.pager_ypos = 0
         for screen_name, status in self.controller.get_home_timeline(30):
-          self.main_window.add_text_to_pager(self.format_status_line(\
+          self.main_window.pager.add_text(self.format_status_line(\
               screen_name, status))
         self.main_window.statusbar_bottom.add_text('Done.', 'left')
       else:
@@ -379,10 +316,10 @@ class GoldFinch(object):
   def init_refresh_thread(self):
     # TODO: may need to add synchcronisation to pager view
     # TODO: (related to above) only update screen if pager contents have changed
-    self.main_window.pager_pad.erase()
+    self.main_window.pager.erase()
     self.main_window.pager_ypos = 0
     for screen_name, status in self.controller.get_home_timeline(30):
-      self.main_window.add_text_to_pager(self.format_status_line(screen_name, status))
+      self.main_window.pager.add_text(self.format_status_line(screen_name, status))
     interval = int(self.config.get('preferences', 'refresh'))
     threading.Timer(interval, self.init_refresh_thread).start()
 

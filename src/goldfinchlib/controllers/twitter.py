@@ -19,7 +19,9 @@
 # ex: expandtab tabstop=2 shiftwidth=2:
 
 from goldfinchlib.controllers import controller
+
 import tweepy
+
 import logging
 import traceback
 import os
@@ -52,7 +54,7 @@ class TwitterController(controller.Controller):
     auth.set_access_token(access_token['key'], access_token['secret'])
     self.api = tweepy.API(auth)
 
-  def get_friends(self, ret_queue):
+  def get_friends(self):
     assert self.api, 'TwitterController.api is not initialised, call\
       TwitterController.perform_auth first'
     self.logger.debug('fetching friend ids')
@@ -92,8 +94,8 @@ class TwitterController(controller.Controller):
       except cPickle.PickleError as e:
         self.logger.debug(traceback.format_exc())
         self.logger.info('error pickling friend_dict to cache file')
-    self.logger.debug('put friend_dict.values into return queue')
-    ret_queue.put(friend_dict.values()) 
+    self.logger.debug('returning from get_friends()')
+    return friend_dict.values()
 
   def get_home_timeline(self, count):
     '''Gets the users 'home timeline which is their tweets along with each of
