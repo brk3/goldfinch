@@ -370,6 +370,11 @@ class GoldFinch(object):
       ret = 1
       print(error_msg)
     self.logger.info('exiting..')
+    # kill off any remaining Timer threads 
+    # this seems necessary on my ubuntu x86 system but not openbsd (?)
+    for t in threading.enumerate():
+      if type(t) is threading._Timer:
+        t.cancel() 
     exit(ret)
 
 def main():
