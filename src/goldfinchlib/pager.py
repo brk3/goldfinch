@@ -21,6 +21,7 @@
 import curses
 
 import Queue
+import locale
 
 class Pager(object):
   '''Creates a simple WindowObject returned by curses.newpad and 
@@ -43,6 +44,7 @@ class Pager(object):
     self.text_ypos = 0
     self.content_queue = Queue.Queue()
     (self.term_height, self.term_width) = self.stdscr.getmaxyx()
+    locale.setlocale(locale.LC_ALL,"")
 
   def draw(self):
     '''Draw the pager to screen'''
@@ -65,18 +67,12 @@ class Pager(object):
       content = [content]
     for line in content:
       try:
-        self.pager_pad.addstr(self.text_ypos, 0, str(line))
+        self.pager_pad.addstr(self.text_ypos, 0, line.encode('utf-8'))
         self.text_ypos = self.text_ypos + 1
       except curses.error as e:
         if self.logger:
           self.logger.error(e)
           self.logger.error(line)
-      except UnicodeEncodeError as e:
-        #TODO: fix unicode support (see note at top of curses howto)
-        if self.logger:
-          self.logger.error(e)
-          self.logger.error(line)
-        break
     self.pager_pad.refresh(0, 0, 1, 0, self.term_height-3,\
         self.term_width)
     self.stdscr.refresh()

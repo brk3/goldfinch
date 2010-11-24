@@ -325,24 +325,26 @@ class GoldFinch(object):
     # TODO: (related to above) only update screen if pager contents have changed
     self.main_window.pager.erase()
     self.main_window.pager_ypos = 0
-    for screen_name, status in self.controller.get_home_timeline(30):
-      self.main_window.pager.add_text(self.format_status_line(screen_name, status))
+    for screen_name, status, created_at in self.controller.get_home_timeline(30):
+      self.main_window.pager.add_text(\
+          self.format_status_line(screen_name, status, created_at))
     interval = int(self.config.get('preferences', 'refresh'))
     threading.Timer(interval, self.init_refresh_thread).start()
 
-  def format_status_line(self, screen_name, message):
+  def format_status_line(self, screen_name, message, timestamp):
     '''Formats a status line for the pager, so everything aligns nicely.  A status line
     consists of screen_name and the message posted by that screen_name.
 
     screen_name -- user name or screen name of the tweeter
     message -- message content
+    timestamp -- time the message was posted
     '''
     screen_name_padding = 20
     the_content = []
     max_chunk_size = self.main_window.term_width - screen_name_padding
 
     # add the first chunk of content, right justified
-    the_content.append(''.join([screen_name.ljust(screen_name_padding-1), 
+    the_content.append(''.join([screen_name.ljust(screen_name_padding), 
         message[0:max_chunk_size]]))
 
     # if there are more chunks, break onto subsequent lines
@@ -351,7 +353,7 @@ class GoldFinch(object):
       for i in range(max_chunk_size*2, len(message)+max_chunk_size, max_chunk_size):
         this_chunk_size = len(message[i-max_chunk_size:i])
         the_content.append(message[i-max_chunk_size:i]\
-            .rjust(screen_name_padding+this_chunk_size-1))
+            .rjust(screen_name_padding+this_chunk_size))
 
     # add a new line 
     the_content.append('')

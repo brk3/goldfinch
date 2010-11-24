@@ -105,4 +105,5 @@ class TwitterController(controller.Controller):
     '''
     self.logger.info('fetching user home timeline')
     home_timeline = self.api.home_timeline(count=count)
-    return [(item.user.screen_name, item.text) for item in home_timeline]
+    return [(item.user.screen_name, item.text, item.created_at)\
+        for item in home_timeline]
